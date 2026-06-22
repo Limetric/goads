@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -23,29 +24,51 @@ import (
 // confirmTTL bounds how long a pending confirmation is valid.
 const confirmTTL = 10 * time.Minute
 
+// Dispatch routes a confirmed write to the correct REST endpoint. The empty
+// value means the default googleAds:mutate path; the recommendation variants
+// route to dedicated RPCs because their operations are not valid mutate keys.
+const (
+	dispatchMutate                = ""
+	dispatchApplyRecommendation   = "apply_recommendation"
+	dispatchDismissRecommendation = "dismiss_recommendation"
+)
+
 // PendingMutation is what a write tool stages for confirmation.
 type PendingMutation struct {
-	Token      string    `json:"token"`
-	Tool       string    `json:"tool"`
-	CustomerID string    `json:"customer_id"`
-	Summary    string    `json:"summary"`
-	Operations []any     `json:"operations"`
-	CreatedAt  time.Time `json:"created_at"`
+	Token      string `json:"token"`
+	Tool       string `json:"tool"`
+	CustomerID string `json:"customer_id"`
+	Summary    string `json:"summary"`
+	Operations []any  `json:"operations"`
+	// Dispatch selects the apply endpoint; "" = googleAds:mutate.
+	Dispatch string `json:"dispatch,omitempty"`
+	// ResourceNames carries full recommendation resource paths for the
+	// recommendation dispatches (unused for the default mutate path).
+	ResourceNames []string  `json:"resource_names,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
 }
 
-// stageMutation persists a pending mutation and returns its confirm token.
+// stageMutation persists a pending googleAds:mutate and returns its confirm token.
 func stageMutation(tool, customerID, summary string, ops []any) (*PendingMutation, error) {
+	return stageDispatch(tool, customerID, summary, dispatchMutate, ops, nil)
+}
+
+// stageDispatch persists a pending write with an explicit dispatch route. Used
+// by recommendation tools that must route to dedicated RPCs on apply.
+func stageDispatch(tool, customerID, summary, dispatch string, ops []any, resourceNames []string) (*PendingMutation, error) {
 	tok, err := newToken()
 	if err != nil {
 		return nil, err
 	}
 	p := &PendingMutation{
-		Token:      tok,
-		Tool:       tool,
-		CustomerID: customerID,
-		Summary:    summary,
-		Operations: ops,
-		CreatedAt:  time.Now().UTC(),
+		Token:         tok,
+		Tool:          tool,
+		CustomerID:    customerID,
+		Summary:       summary,
+		Operations:    ops,
+		Dispatch:      dispatch,
+		ResourceNames: resourceNames,
+		CreatedAt:     time.Now().UTC(),
 	}
 	dir, err := stateDir()
 	if err != nil {
@@ -86,6 +109,22 @@ func consumeMutation(token string) (*PendingMutation, error) {
 		return nil, fmt.Errorf("confirmation token %q expired (valid for %s); re-run the command to get a fresh one", token, confirmTTL)
 	}
 	return &p, nil
+}
+
+// applyPending executes a consumed pending write via the endpoint selected by
+// its Dispatch: the dedicated recommendation RPCs, or the default mutate path.
+func applyPending(ctx context.Context, c *Client, p *PendingMutation) error {
+	switch p.Dispatch {
+	case dispatchApplyRecommendation:
+		_, err := c.ApplyRecommendations(ctx, p.CustomerID, p.ResourceNames)
+		return err
+	case dispatchDismissRecommendation:
+		_, err := c.DismissRecommendations(ctx, p.CustomerID, p.ResourceNames)
+		return err
+	default:
+		_, err := c.Mutate(ctx, p.CustomerID, p.Operations)
+		return err
+	}
 }
 
 // previewText renders a staged mutation for a human/agent to review.

@@ -49,7 +49,7 @@ registration in `registerTools` (mcp.go). Write tools must use the confirm flow.
 | `tools/pmax.rs`                  | `tool_pmax.go`           | both  | todo   |
 | `tools/geo.rs`                   | `tool_geo.go`            | read  | done   |
 | `tools/conversions.rs`           | `tool_conversions.go`    | both  | done   |
-| `tools/recommendations.rs`       | `tool_recommendations.go`| both  | todo   |
+| `tools/recommendations.rs`       | `tool_recommendations.go`| both  | done   |
 | `tools/reporting.rs`             | `tool_reporting.go`      | read  | done   |
 | `tools/scheduling.rs`            | `tool_scheduling.go`     | write | todo   |
 | `tools/entity_lifecycle.rs`      | `tool_entity_lifecycle.go`| write| todo   |

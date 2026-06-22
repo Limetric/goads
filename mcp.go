@@ -102,6 +102,18 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "keyword_forecasts",
 		"Get recent historical performance metrics for specific keywords.",
 		runKeywordForecasts)
+
+	addTool(server, client, "list_recommendations",
+		"List active (non-dismissed) recommendations for the account.",
+		runListRecommendations)
+
+	addTool(server, client, "apply_recommendation",
+		"Apply a recommendation. Returns a preview + confirm token; pass Confirm to apply.",
+		runApplyRecommendation)
+
+	addTool(server, client, "dismiss_recommendation",
+		"Dismiss a recommendation. Returns a preview + confirm token; pass Confirm to apply.",
+		runDismissRecommendation)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
