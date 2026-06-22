@@ -70,6 +70,10 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "negative_keywords",
 		"List campaign-level negative keywords.",
 		runNegativeKeywords)
+
+	addTool(server, client, "report",
+		"Run an arbitrary GAQL query and return results as json (default), table, or csv.",
+		runReport)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

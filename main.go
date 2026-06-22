@@ -59,6 +59,7 @@ func init() {
 	rootCmd.AddCommand(campaignsCmd)
 	rootCmd.AddCommand(adsCmd)
 	rootCmd.AddCommand(keywordsCmd)
+	rootCmd.AddCommand(reportCmd)
 }
 
 func main() {
