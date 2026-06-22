@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -212,19 +213,26 @@ func registerTools(server *mcp.Server, client *Client) {
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
-// tool. Returning the typed result as the handler's output lets the SDK
-// populate both the structured content and a JSON text block automatically.
+// tool, returning the result as both a JSON text block and structured content.
+//
 // The input schema for A is derived by the SDK via reflection over its struct
-// tags (the `jsonschema` tag value becomes each field's description).
+// tags (the `jsonschema` tag value becomes each field's description). The
+// handler's output type is deliberately `any` (not R): that opts out of the
+// SDK's output-schema generation and validation, which otherwise mis-infers
+// result fields typed `[]json.RawMessage` (a `[]byte` alias) as byte arrays and
+// rejects the real object rows at call time.
 func addTool[A any, R any](server *mcp.Server, client *Client, name, desc string, handler func(context.Context, *Client, A) (R, error)) {
 	mcp.AddTool(server, &mcp.Tool{Name: name, Description: desc},
-		func(ctx context.Context, _ *mcp.CallToolRequest, args A) (*mcp.CallToolResult, R, error) {
+		func(ctx context.Context, _ *mcp.CallToolRequest, args A) (*mcp.CallToolResult, any, error) {
 			result, err := handler(ctx, client, args)
 			if err != nil {
-				var zero R
-				return nil, zero, err
+				return nil, nil, err
 			}
-			return nil, result, nil
+			text, _ := json.MarshalIndent(result, "", "  ")
+			return &mcp.CallToolResult{
+				Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
+				StructuredContent: result,
+			}, nil, nil
 		})
 }
 
