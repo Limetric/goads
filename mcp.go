@@ -114,6 +114,14 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "dismiss_recommendation",
 		"Dismiss a recommendation. Returns a preview + confirm token; pass Confirm to apply.",
 		runDismissRecommendation)
+
+	addTool(server, client, "upload_image_asset",
+		"Upload a base64-encoded image asset. Returns a preview + confirm token; pass Confirm to apply.",
+		runUploadImageAsset)
+
+	addTool(server, client, "upload_text_asset",
+		"Upload a reusable text asset. Returns a preview + confirm token; pass Confirm to apply.",
+		runUploadTextAsset)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
