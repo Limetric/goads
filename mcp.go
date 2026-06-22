@@ -162,6 +162,10 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "update_ad_group",
 		"Update an ad group's name, CPC bid, and/or ad rotation mode. Returns a preview + confirm token; pass Confirm to apply.",
 		runUpdateAdGroup)
+
+	addTool(server, client, "draft_responsive_search_ad",
+		"Draft a Responsive Search Ad (3-15 headlines, 2-4 descriptions; defaults to PAUSED). Returns a preview + confirm token; pass Confirm to apply.",
+		runDraftResponsiveSearchAd)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

@@ -75,6 +75,7 @@ func init() {
 	rootCmd.AddCommand(biddingCmd)
 	rootCmd.AddCommand(audienceCmd)
 	rootCmd.AddCommand(adGroupCmd)
+	rootCmd.AddCommand(adCmd)
 }
 
 func main() {
