@@ -45,6 +45,10 @@ func runBudgetSet(ctx context.Context, c *Client, args BudgetSetArgs) (BudgetSet
 	if args.CustomerID == "" || args.BudgetID == "" {
 		return BudgetSetResult{}, fmt.Errorf("customer_id and budget_id are required")
 	}
+	// Guard: reject daily budgets above the configured cap (default $50/day).
+	if err := checkBudgetCap(float64(args.AmountMicros)/1_000_000.0, loadSafetyConfig()); err != nil {
+		return BudgetSetResult{}, toolError("set_campaign_budget", err)
+	}
 	summary := fmt.Sprintf("Set budget %s to %d micros", args.BudgetID, args.AmountMicros)
 
 	// Preview path: stage and return a token. Nothing is mutated.
