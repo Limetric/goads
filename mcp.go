@@ -54,6 +54,10 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "campaigns",
 		"Show campaign-level performance metrics (cost, clicks, conversions, CTR, CPA) for non-removed campaigns.",
 		runCampaigns)
+
+	addTool(server, client, "ads",
+		"Show ad-level performance metrics for non-removed ads, ordered by cost.",
+		runAds)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
