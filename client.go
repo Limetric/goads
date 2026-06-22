@@ -117,15 +117,13 @@ func apiError(status int, body []byte) error {
 
 // --- Operations -----------------------------------------------------------
 //
-// Only the operations needed by the currently-ported tools are implemented.
-// The upstream server uses exactly five REST endpoints; add the rest as tools
-// are ported (see docs/PORTING.md):
+// The upstream server uses exactly five REST endpoints, all implemented here:
 //
 //   customers/{id}/googleAds:search          -> Search
 //   customers/{id}/googleAds:mutate          -> Mutate
-//   customers/{id}:generateKeywordIdeas      -> (todo)
-//   customers/{id}/recommendations:apply     -> (todo)
-//   customers/{id}/recommendations:dismiss   -> (todo)
+//   customers/{id}:generateKeywordIdeas      -> GenerateKeywordIdeas
+//   customers/{id}/recommendations:apply     -> ApplyRecommendations
+//   customers/{id}/recommendations:dismiss   -> DismissRecommendations
 
 // searchResponse is one page of a googleAds:search call.
 type searchResponse struct {
@@ -167,11 +165,85 @@ type MutateResponse struct {
 
 // Mutate applies a batch of mutate operations for one customer. Callers are
 // responsible for guarding writes (see safety.go) before reaching this point.
+//
+// Unknown top-level operation keys are rejected client-side (validateMutateOps)
+// before any HTTP traffic, and partialFailure is enabled so a bad op in a batch
+// surfaces as a per-op error rather than failing the whole request.
 func (c *Client) Mutate(ctx context.Context, customerID string, ops []any) (*MutateResponse, error) {
+	if err := validateMutateOps(ops); err != nil {
+		return nil, err
+	}
 	customerID = normalizeCustomerID(customerID)
 	path := fmt.Sprintf("customers/%s/googleAds:mutate", customerID)
-	body := map[string]any{"mutateOperations": ops}
+	body := map[string]any{"mutateOperations": ops, "partialFailure": true}
 	var out MutateResponse
+	if err := c.post(ctx, path, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GenerateKeywordIdeas calls the Keyword Planner generateKeywordIdeas endpoint
+// for a set of seed keywords, returning the raw idea result rows.
+func (c *Client) GenerateKeywordIdeas(ctx context.Context, customerID string, seedKeywords []string, pageSize int) ([]json.RawMessage, error) {
+	customerID = normalizeCustomerID(customerID)
+	path := fmt.Sprintf("customers/%s:generateKeywordIdeas", customerID)
+	if pageSize <= 0 {
+		pageSize = 50
+	}
+	body := map[string]any{
+		"keywordSeed":        map[string]any{"keywords": seedKeywords},
+		"language":           "languageConstants/1000",
+		"pageSize":           pageSize,
+		"keywordPlanNetwork": "GOOGLE_SEARCH",
+	}
+	var out struct {
+		Results []json.RawMessage `json:"results"`
+	}
+	if err := c.post(ctx, path, body, &out); err != nil {
+		return nil, err
+	}
+	return out.Results, nil
+}
+
+// RecommendationResponse is the result of a recommendations:apply or
+// recommendations:dismiss call.
+type RecommendationResponse struct {
+	Results       []json.RawMessage `json:"results"`
+	PartialErrors json.RawMessage   `json:"partialFailureError,omitempty"`
+}
+
+// recommendationOps turns full recommendation resource names into the
+// {"resourceName": …} operation objects both RPCs expect.
+func recommendationOps(resourceNames []string) []map[string]any {
+	ops := make([]map[string]any, len(resourceNames))
+	for i, rn := range resourceNames {
+		ops[i] = map[string]any{"resourceName": rn}
+	}
+	return ops
+}
+
+// ApplyRecommendations applies recommendations via the dedicated
+// recommendations:apply RPC. resourceNames must be full paths
+// (customers/{cid}/recommendations/{id}).
+func (c *Client) ApplyRecommendations(ctx context.Context, customerID string, resourceNames []string) (*RecommendationResponse, error) {
+	customerID = normalizeCustomerID(customerID)
+	path := fmt.Sprintf("customers/%s/recommendations:apply", customerID)
+	body := map[string]any{"operations": recommendationOps(resourceNames), "partialFailure": true}
+	var out RecommendationResponse
+	if err := c.post(ctx, path, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// DismissRecommendations dismisses recommendations via the dedicated
+// recommendations:dismiss RPC.
+func (c *Client) DismissRecommendations(ctx context.Context, customerID string, resourceNames []string) (*RecommendationResponse, error) {
+	customerID = normalizeCustomerID(customerID)
+	path := fmt.Sprintf("customers/%s/recommendations:dismiss", customerID)
+	body := map[string]any{"operations": recommendationOps(resourceNames)}
+	var out RecommendationResponse
 	if err := c.post(ctx, path, body, &out); err != nil {
 		return nil, err
 	}

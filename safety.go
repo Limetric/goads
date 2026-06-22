@@ -121,3 +121,105 @@ func newToken() (string, error) {
 	}
 	return hex.EncodeToString(b), nil
 }
+
+// allowedMutateOps is the whitelist of top-level MutateOperation keys accepted
+// by Google Ads v23's googleAds:mutate endpoint. Payloads with any key not in
+// this set are rejected client-side before any HTTP traffic — this catches
+// applyRecommendationOperation / dismissRecommendationOperation mistakes (those
+// live on dedicated RPCs, see Client.ApplyRecommendations / DismissRecommendations).
+//
+// Source: Google Ads API v23 MutateOperation.operation oneof definition.
+var allowedMutateOps = map[string]bool{
+	"adGroupAdLabelOperation":               true,
+	"adGroupAdOperation":                    true,
+	"adGroupAssetOperation":                 true,
+	"adGroupBidModifierOperation":           true,
+	"adGroupCriterionCustomizerOperation":   true,
+	"adGroupCriterionLabelOperation":        true,
+	"adGroupCriterionOperation":             true,
+	"adGroupCustomizerOperation":            true,
+	"adGroupExtensionSettingOperation":      true,
+	"adGroupFeedOperation":                  true,
+	"adGroupLabelOperation":                 true,
+	"adGroupOperation":                      true,
+	"adOperation":                           true,
+	"adParameterOperation":                  true,
+	"assetGroupAssetOperation":              true,
+	"assetGroupListingGroupFilterOperation": true,
+	"assetGroupOperation":                   true,
+	"assetGroupSignalOperation":             true,
+	"assetOperation":                        true,
+	"assetSetAssetOperation":                true,
+	"assetSetOperation":                     true,
+	"audienceOperation":                     true,
+	"biddingDataExclusionOperation":         true,
+	"biddingSeasonalityAdjustmentOperation": true,
+	"biddingStrategyOperation":              true,
+	"campaignAssetOperation":                true,
+	"campaignAssetSetOperation":             true,
+	"campaignBidModifierOperation":          true,
+	"campaignBudgetOperation":               true,
+	"campaignConversionGoalOperation":       true,
+	"campaignCriterionOperation":            true,
+	"campaignCustomizerOperation":           true,
+	"campaignDraftOperation":                true,
+	"campaignExtensionSettingOperation":     true,
+	"campaignFeedOperation":                 true,
+	"campaignGroupOperation":                true,
+	"campaignLabelOperation":                true,
+	"campaignOperation":                     true,
+	"campaignSharedSetOperation":            true,
+	"conversionActionOperation":             true,
+	"conversionCustomVariableOperation":     true,
+	"conversionGoalCampaignConfigOperation": true,
+	"conversionValueRuleOperation":          true,
+	"conversionValueRuleSetOperation":       true,
+	"customConversionGoalOperation":         true,
+	"customerAssetOperation":                true,
+	"customerConversionGoalOperation":       true,
+	"customerCustomizerOperation":           true,
+	"customerExtensionSettingOperation":     true,
+	"customerFeedOperation":                 true,
+	"customerLabelOperation":                true,
+	"customerNegativeCriterionOperation":    true,
+	"customerOperation":                     true,
+	"customizerAttributeOperation":          true,
+	"experimentArmOperation":                true,
+	"experimentOperation":                   true,
+	"extensionFeedItemOperation":            true,
+	"feedItemOperation":                     true,
+	"feedItemSetLinkOperation":              true,
+	"feedItemSetOperation":                  true,
+	"feedItemTargetOperation":               true,
+	"feedMappingOperation":                  true,
+	"feedOperation":                         true,
+	"keywordPlanAdGroupKeywordOperation":    true,
+	"keywordPlanAdGroupOperation":           true,
+	"keywordPlanCampaignKeywordOperation":   true,
+	"keywordPlanCampaignOperation":          true,
+	"keywordPlanOperation":                  true,
+	"labelOperation":                        true,
+	"remarketingActionOperation":            true,
+	"sharedCriterionOperation":              true,
+	"sharedSetOperation":                    true,
+	"smartCampaignSettingOperation":         true,
+	"userListOperation":                     true,
+}
+
+// validateMutateOps verifies every operation uses a top-level key from
+// allowedMutateOps, returning an actionable error on the first offender. This
+// runs before any HTTP traffic (see Client.Mutate).
+func validateMutateOps(ops []any) error {
+	for i, op := range ops {
+		m, ok := op.(map[string]any)
+		if !ok {
+			return fmt.Errorf("mutate operation at index %d is not a JSON object", i)
+		}
+		for key := range m {
+			if !allowedMutateOps[key] {
+				return fmt.Errorf("unknown MutateOperation key %q at index %d: recommendation operations must use apply_recommendations / dismiss_recommendations — they are NOT valid keys on googleAds:mutate in v23", key, i)
+			}
+		}
+	}
+	return nil
+}
