@@ -198,6 +198,10 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "remove_extension",
 		"Remove a campaign extension (destructive). Returns a preview + confirm token; pass Confirm to apply.",
 		runRemoveExtension)
+
+	addTool(server, client, "create_pmax_campaign",
+		"Create a Performance Max campaign as one atomic batch (defaults to PAUSED). Returns a preview + confirm token; pass Confirm to apply.",
+		runCreatePmaxCampaign)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

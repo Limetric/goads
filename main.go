@@ -77,6 +77,7 @@ func init() {
 	rootCmd.AddCommand(adGroupCmd)
 	rootCmd.AddCommand(adCmd)
 	rootCmd.AddCommand(extensionCmd)
+	rootCmd.AddCommand(pmaxCmd)
 }
 
 func main() {
