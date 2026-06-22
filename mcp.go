@@ -94,6 +94,14 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "extensions",
 		"List campaign-level extensions (sitelinks, callouts, structured snippets).",
 		runExtensions)
+
+	addTool(server, client, "keyword_ideas",
+		"Discover keyword ideas from seed keywords using the Keyword Planner.",
+		runDiscoverKeywords)
+
+	addTool(server, client, "keyword_forecasts",
+		"Get recent historical performance metrics for specific keywords.",
+		runKeywordForecasts)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
