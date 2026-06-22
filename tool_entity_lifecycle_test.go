@@ -1,0 +1,96 @@
+package main
+
+import "testing"
+
+func TestEntityResourceAndOp(t *testing.T) {
+	cases := []struct {
+		typ, wantRes, wantOp string
+	}{
+		{"campaign", "customers/1/campaigns/5", "campaignOperation"},
+		{"ad_group", "customers/1/adGroups/5", "adGroupOperation"},
+		{"ad", "customers/1/adGroupAds/5", "adGroupAdOperation"},
+		{"keyword", "customers/1/adGroupCriteria/5", "adGroupCriterionOperation"},
+	}
+	for _, tc := range cases {
+		res, op, err := entityResourceAndOp("1", tc.typ, "5")
+		if err != nil || res != tc.wantRes || op != tc.wantOp {
+			t.Errorf("%s -> (%q,%q,%v), want (%q,%q)", tc.typ, res, op, err, tc.wantRes, tc.wantOp)
+		}
+	}
+	if _, _, err := entityResourceAndOp("1", "bogus", "5"); err == nil {
+		t.Error("expected error for invalid entity type")
+	}
+}
+
+func TestPauseEntity_PreviewThenApply(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := EntityActionArgs{CustomerID: "123-456-7890", EntityType: "campaign", EntityID: "555"}
+	prev, err := runPauseEntity(t.Context(), c, args)
+	if err != nil || prev.Token == "" || cap.calls != 0 {
+		t.Fatalf("preview: %+v err=%v calls=%d", prev, err, cap.calls)
+	}
+	args.Confirm = prev.Token
+	if _, err := runPauseEntity(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	upd := opUpdate(t, cap.firstOp(t), "campaignOperation")
+	if upd["status"] != "PAUSED" || upd["resourceName"] != "customers/1234567890/campaigns/555" {
+		t.Errorf("unexpected update op: %v", upd)
+	}
+}
+
+func TestEnableEntity_SetsEnabled(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := EntityActionArgs{CustomerID: "1", EntityType: "ad_group", EntityID: "9"}
+	prev, _ := runEnableEntity(t.Context(), c, args)
+	args.Confirm = prev.Token
+	if _, err := runEnableEntity(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if opUpdate(t, cap.firstOp(t), "adGroupOperation")["status"] != "ENABLED" {
+		t.Errorf("expected ENABLED status")
+	}
+}
+
+func TestRemoveEntity_UsesRemoveOp(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := EntityActionArgs{CustomerID: "1", EntityType: "ad", EntityID: "10~20"}
+	prev, err := runRemoveEntity(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	args.Confirm = prev.Token
+	if _, err := runRemoveEntity(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	op := cap.firstOp(t)
+	inner, _ := op["adGroupAdOperation"].(map[string]any)
+	if inner["remove"] != "customers/1/adGroupAds/10~20" {
+		t.Errorf("expected remove op, got %v", op)
+	}
+}
+
+func TestEntityActions_Blocked(t *testing.T) {
+	t.Setenv("GOOGLE_ADS_BLOCKED_OPS", "remove_entity")
+	if _, err := runRemoveEntity(t.Context(), nil, EntityActionArgs{CustomerID: "1", EntityType: "campaign", EntityID: "5"}); err == nil {
+		t.Fatal("expected blocked-operation error")
+	}
+}
+
+func TestEntityActions_InvalidType(t *testing.T) {
+	if _, err := runPauseEntity(t.Context(), nil, EntityActionArgs{CustomerID: "1", EntityType: "nope", EntityID: "5"}); err == nil {
+		t.Fatal("expected error for invalid entity type")
+	}
+}

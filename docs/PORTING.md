@@ -51,8 +51,8 @@ registration in `registerTools` (mcp.go). Write tools must use the confirm flow.
 | `tools/conversions.rs`           | `tool_conversions.go`    | both  | done   |
 | `tools/recommendations.rs`       | `tool_recommendations.go`| both  | done   |
 | `tools/reporting.rs`             | `tool_reporting.go`      | read  | done   |
-| `tools/scheduling.rs`            | `tool_scheduling.go`     | write | todo   |
-| `tools/entity_lifecycle.rs`      | `tool_entity_lifecycle.go`| write| todo   |
+| `tools/scheduling.rs`            | `tool_scheduling.go`     | write | done   |
+| `tools/entity_lifecycle.rs`      | `tool_entity_lifecycle.go`| write| done   |
 | `tools/policy.rs`                | `tool_policy.go`         | read  | done   |
 | `tools/confirm.rs`               | folded into `safety.go`  | —     | done   |
 

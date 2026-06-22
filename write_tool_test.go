@@ -61,6 +61,20 @@ func opCreate(t *testing.T, op map[string]any, key string) map[string]any {
 	return create
 }
 
+// opUpdate digs out op[<key>]["update"] as a map for assertions.
+func opUpdate(t *testing.T, op map[string]any, key string) map[string]any {
+	t.Helper()
+	outer, ok := op[key].(map[string]any)
+	if !ok {
+		t.Fatalf("operation has no %q key: %v", key, op)
+	}
+	update, ok := outer["update"].(map[string]any)
+	if !ok {
+		t.Fatalf("%q has no update: %v", key, outer)
+	}
+	return update
+}
+
 func TestWriteHelpers_PreviewThenApply(t *testing.T) {
 	useTempState(t)
 	srv, cap := mutateServer(t)

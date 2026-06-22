@@ -122,6 +122,22 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "upload_text_asset",
 		"Upload a reusable text asset. Returns a preview + confirm token; pass Confirm to apply.",
 		runUploadTextAsset)
+
+	addTool(server, client, "pause_entity",
+		"Pause a campaign, ad group, ad, or keyword. Returns a preview + confirm token; pass Confirm to apply.",
+		runPauseEntity)
+
+	addTool(server, client, "enable_entity",
+		"Enable a campaign, ad group, ad, or keyword. Returns a preview + confirm token; pass Confirm to apply.",
+		runEnableEntity)
+
+	addTool(server, client, "remove_entity",
+		"Remove a campaign, ad group, ad, or keyword (destructive). Returns a preview + confirm token; pass Confirm to apply.",
+		runRemoveEntity)
+
+	addTool(server, client, "set_campaign_schedule",
+		"Set campaign ad schedules (day-of-week time windows). Returns a preview + confirm token; pass Confirm to apply.",
+		runSetCampaignSchedule)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

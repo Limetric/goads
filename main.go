@@ -68,6 +68,10 @@ func init() {
 	rootCmd.AddCommand(keywordForecastsCmd)
 	rootCmd.AddCommand(recommendationsCmd)
 	rootCmd.AddCommand(assetCmd)
+	rootCmd.AddCommand(pauseCmd)
+	rootCmd.AddCommand(enableCmd)
+	rootCmd.AddCommand(removeCmd)
+	rootCmd.AddCommand(scheduleCmd)
 }
 
 func main() {
