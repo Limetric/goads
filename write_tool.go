@@ -25,6 +25,23 @@ type WriteResult struct {
 	Token   string `json:"confirm_token,omitempty"`
 	Preview string `json:"preview,omitempty"`
 	Detail  string `json:"detail,omitempty"`
+	// StatusAfterApply is the lifecycle status the entity will hold once
+	// applied (set by create tools so agents know whether to enable it).
+	StatusAfterApply string `json:"status_after_apply,omitempty"`
+	// NextActionHint points the agent at the next MCP tool to call (e.g. to
+	// enable an entity created in PAUSED status).
+	NextActionHint *NextActionHint `json:"next_action_hint,omitempty"`
+}
+
+// withCreateStatus annotates a preview WriteResult with the resulting status
+// and, when that status is PAUSED, a hint describing how to enable the entity.
+func (r WriteResult) withCreateStatus(status AdStatus, pausedHint NextActionHint) WriteResult {
+	r.StatusAfterApply = string(status)
+	if status == AdStatusPaused {
+		h := pausedHint
+		r.NextActionHint = &h
+	}
+	return r
 }
 
 // previewResult wraps a freshly staged pending mutation as a preview WriteResult.
