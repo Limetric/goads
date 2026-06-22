@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -30,7 +29,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	registerTools(server, client)
 
 	// Run blocks until stdin closes or the context is cancelled.
-	return server.Run(ctx, mcp.NewStdioTransport())
+	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
 // registerTools wires every ported tool into the MCP server. Each tool's input
@@ -213,20 +212,19 @@ func registerTools(server *mcp.Server, client *Client) {
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
-// tool, marshaling the result into both structured output and a text block. The
-// input schema for A is derived by the SDK via reflection over its struct tags.
+// tool. Returning the typed result as the handler's output lets the SDK
+// populate both the structured content and a JSON text block automatically.
+// The input schema for A is derived by the SDK via reflection over its struct
+// tags (the `jsonschema` tag value becomes each field's description).
 func addTool[A any, R any](server *mcp.Server, client *Client, name, desc string, handler func(context.Context, *Client, A) (R, error)) {
 	mcp.AddTool(server, &mcp.Tool{Name: name, Description: desc},
-		func(ctx context.Context, _ *mcp.ServerSession, params *mcp.CallToolParamsFor[A]) (*mcp.CallToolResultFor[R], error) {
-			result, err := handler(ctx, client, params.Arguments)
+		func(ctx context.Context, _ *mcp.CallToolRequest, args A) (*mcp.CallToolResult, R, error) {
+			result, err := handler(ctx, client, args)
 			if err != nil {
-				return nil, err
+				var zero R
+				return nil, zero, err
 			}
-			text, _ := json.MarshalIndent(result, "", "  ")
-			return &mcp.CallToolResultFor[R]{
-				Content:           []mcp.Content{&mcp.TextContent{Text: string(text)}},
-				StructuredContent: result,
-			}, nil
+			return nil, result, nil
 		})
 }
 

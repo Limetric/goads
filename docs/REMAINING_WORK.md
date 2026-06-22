@@ -238,11 +238,14 @@ the relevant tools. Don't over-engineer — strings with validation are fine.
 
 ## 7. Gotchas (read before touching the SDK or writes)
 
-- **MCP SDK is pinned at `v0.2.0`.** Its API differs from the SDK's `main`-branch
-  README. Handlers are `func(ctx, *mcp.ServerSession, *mcp.CallToolParamsFor[A]) (*mcp.CallToolResultFor[R], error)`,
-  and stdio uses `mcp.NewStdioTransport()` (the zero-value `&mcp.StdioTransport{}`
-  segfaults — nil `rwc`). All of this is already handled in `mcp.go`'s `addTool`;
-  if you bump the SDK version, that function is the only place to adjust.
+- **MCP SDK is `v1.4.1`** (bumped from the original `v0.2.0` to clear three
+  reachable security advisories). Handlers are
+  `func(ctx, *mcp.CallToolRequest, A) (*mcp.CallToolResult, R, error)` — return a
+  nil result plus the typed `R` and the SDK fills in both structured content and
+  a JSON text block. Stdio uses `&mcp.StdioTransport{}` (a safe zero value in
+  v1.x). Field descriptions come from each `Args` field's `jsonschema` tag value
+  (it must not start with `WORD=`). All of this lives in `mcp.go`'s `addTool`; if
+  you bump the SDK again, that function is the only place to adjust.
 - **Writes must preview first.** If you ever call `client.Mutate` directly from a
   tool without going through `stageMutation`/`consumeMutation`, that's a bug.
 - **Keep CLI and MCP in sync.** A new tool is not done until it's registered in
