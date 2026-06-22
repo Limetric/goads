@@ -182,6 +182,22 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "remove_negative_keywords",
 		"Remove campaign-level negative keywords by criterion ID (destructive). Returns a preview + confirm token; pass Confirm to apply.",
 		runRemoveNegativeKeywords)
+
+	addTool(server, client, "draft_sitelinks",
+		"Draft sitelink extensions for a campaign. Returns a preview + confirm token; pass Confirm to apply.",
+		runDraftSitelinks)
+
+	addTool(server, client, "create_callouts",
+		"Draft callout extensions for a campaign. Returns a preview + confirm token; pass Confirm to apply.",
+		runCreateCallouts)
+
+	addTool(server, client, "create_structured_snippets",
+		"Draft structured snippet extensions for a campaign. Returns a preview + confirm token; pass Confirm to apply.",
+		runCreateStructuredSnippets)
+
+	addTool(server, client, "remove_extension",
+		"Remove a campaign extension (destructive). Returns a preview + confirm token; pass Confirm to apply.",
+		runRemoveExtension)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

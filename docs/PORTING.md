@@ -45,7 +45,7 @@ registration in `registerTools` (mcp.go). Write tools must use the confirm flow.
 | `tools/bidding.rs`               | `tool_bidding.go`        | write | done   |
 | `tools/assets.rs`                | `tool_assets.go`         | both  | done   |
 | `tools/audiences.rs`             | `tool_audiences.go`      | both  | done   |
-| `tools/extensions*.rs`           | `tool_extensions*.go`    | both  | todo   |
+| `tools/extensions*.rs`           | `tool_extensions*.go`    | both  | done   |
 | `tools/pmax.rs`                  | `tool_pmax.go`           | both  | todo   |
 | `tools/geo.rs`                   | `tool_geo.go`            | read  | done   |
 | `tools/conversions.rs`           | `tool_conversions.go`    | both  | done   |
