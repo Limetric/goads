@@ -82,6 +82,18 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "geo_performance",
 		"Show geographic performance for campaigns (defaults to the last 30 days).",
 		runGeoPerformance)
+
+	addTool(server, client, "conversions",
+		"List all conversion actions configured in the account.",
+		runConversions)
+
+	addTool(server, client, "policy",
+		"List ads with policy issues (disapproved, limited, under review).",
+		runPolicy)
+
+	addTool(server, client, "extensions",
+		"List campaign-level extensions (sitelinks, callouts, structured snippets).",
+		runExtensions)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

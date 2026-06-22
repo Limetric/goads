@@ -61,6 +61,9 @@ func init() {
 	rootCmd.AddCommand(keywordsCmd)
 	rootCmd.AddCommand(reportCmd)
 	rootCmd.AddCommand(geoCmd)
+	rootCmd.AddCommand(conversionsCmd)
+	rootCmd.AddCommand(policyCmd)
+	rootCmd.AddCommand(extensionsCmd)
 }
 
 func main() {
