@@ -37,7 +37,7 @@ registration in `registerTools` (mcp.go). Write tools must use the confirm flow.
 | (search / run_gaql)              | `tool_search.go`         | read  | done   |
 | `tools/budget.rs` (+ write)      | `tool_budget_write.go`   | write | done   |
 | `tools/campaigns.rs`             | `tool_campaigns.go`      | read  | done   |
-| `tools/campaigns_write.rs`       | `tool_campaigns_write.go`| write | todo   |
+| `tools/campaigns_write.rs`       | `tool_campaigns_write.go`| write | done   |
 | `tools/ad_groups_write.rs`       | `tool_ad_groups_write.go`| write | done   |
 | `tools/ads.rs` / `ads_write.rs`  | `tool_ads*.go`           | both  | done   |
 | `tools/keywords.rs` / `_write`   | `tool_keywords*.go`      | both  | done   |

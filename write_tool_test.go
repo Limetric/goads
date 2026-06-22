@@ -8,6 +8,11 @@ import (
 	"testing"
 )
 
+// decodeJSONBody decodes a request's JSON body into v.
+func decodeJSONBody(r *http.Request, v any) error {
+	return json.NewDecoder(r.Body).Decode(v)
+}
+
 // mutateCapture records calls to the googleAds:mutate endpoint of a fake API.
 type mutateCapture struct {
 	calls    int

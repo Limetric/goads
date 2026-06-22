@@ -78,6 +78,7 @@ func init() {
 	rootCmd.AddCommand(adCmd)
 	rootCmd.AddCommand(extensionCmd)
 	rootCmd.AddCommand(pmaxCmd)
+	rootCmd.AddCommand(campaignCmd)
 }
 
 func main() {
