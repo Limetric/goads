@@ -1,6 +1,21 @@
 package main
 
-import "context"
+import (
+	"context"
+	"strconv"
+)
+
+// dollarsToMicros converts a currency amount to micros (1 unit = 1,000,000
+// micros). Google Ads money fields are expressed in micros.
+func dollarsToMicros(dollars float64) int64 {
+	return int64(dollars * 1_000_000.0)
+}
+
+// microsString renders a micros amount as the decimal string the REST API
+// expects for int64 money fields.
+func microsString(micros int64) string {
+	return strconv.FormatInt(micros, 10)
+}
 
 // WriteResult is the standard structured output for a write tool. The first
 // call (no confirm token) returns Token+Preview; the confirm call returns

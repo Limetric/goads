@@ -138,6 +138,22 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "set_campaign_schedule",
 		"Set campaign ad schedules (day-of-week time windows). Returns a preview + confirm token; pass Confirm to apply.",
 		runSetCampaignSchedule)
+
+	addTool(server, client, "create_portfolio_bidding_strategy",
+		"Create a portfolio bidding strategy (TARGET_CPA/ROAS/IMPRESSION_SHARE). Returns a preview + confirm token; pass Confirm to apply.",
+		runCreatePortfolioBidding)
+
+	addTool(server, client, "update_keyword_bid",
+		"Update a keyword's CPC bid (enforces the bid-increase guard). Returns a preview + confirm token; pass Confirm to apply.",
+		runUpdateKeywordBid)
+
+	addTool(server, client, "create_custom_audience",
+		"Create a custom audience from URL patterns or rules. Returns a preview + confirm token; pass Confirm to apply.",
+		runCreateCustomAudience)
+
+	addTool(server, client, "add_audience_targeting",
+		"Attach audience targeting to a campaign (TARGETING/OBSERVATION). Returns a preview + confirm token; pass Confirm to apply.",
+		runAddAudienceTargeting)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

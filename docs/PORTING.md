@@ -42,9 +42,9 @@ registration in `registerTools` (mcp.go). Write tools must use the confirm flow.
 | `tools/ads.rs` / `ads_write.rs`  | `tool_ads*.go`           | both  | todo   |
 | `tools/keywords.rs` / `_write`   | `tool_keywords*.go`      | both  | todo   |
 | `tools/keyword_planner.rs`       | `tool_keyword_planner.go`| read  | done   |
-| `tools/bidding.rs`               | `tool_bidding.go`        | write | todo   |
+| `tools/bidding.rs`               | `tool_bidding.go`        | write | done   |
 | `tools/assets.rs`                | `tool_assets.go`         | both  | done   |
-| `tools/audiences.rs`             | `tool_audiences.go`      | both  | todo   |
+| `tools/audiences.rs`             | `tool_audiences.go`      | both  | done   |
 | `tools/extensions*.rs`           | `tool_extensions*.go`    | both  | todo   |
 | `tools/pmax.rs`                  | `tool_pmax.go`           | both  | todo   |
 | `tools/geo.rs`                   | `tool_geo.go`            | read  | done   |
