@@ -56,6 +56,7 @@ func init() {
 	rootCmd.AddCommand(searchCmd)
 	rootCmd.AddCommand(accountsCmd)
 	rootCmd.AddCommand(budgetCmd)
+	rootCmd.AddCommand(campaignsCmd)
 }
 
 func main() {

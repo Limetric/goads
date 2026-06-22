@@ -50,6 +50,10 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "set_campaign_budget",
 		"Update a campaign's daily budget. Returns a preview + confirm token; pass Confirm to apply.",
 		runBudgetSet)
+
+	addTool(server, client, "campaigns",
+		"Show campaign-level performance metrics (cost, clicks, conversions, CTR, CPA) for non-removed campaigns.",
+		runCampaigns)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP

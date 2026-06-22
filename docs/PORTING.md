@@ -22,9 +22,9 @@ Tracks the port of [`FGRibreau/mcp-google-ads`](https://github.com/FGRibreau/mcp
 |--------------------------------------------|------------------------------|--------|
 | `customers/{id}/googleAds:search`          | `Client.Search`              | done   |
 | `customers/{id}/googleAds:mutate`          | `Client.Mutate`              | done   |
-| `customers/{id}:generateKeywordIdeas`      | `Client.GenerateKeywordIdeas`| todo   |
-| `customers/{id}/recommendations:apply`     | `Client.ApplyRecommendations`| todo   |
-| `customers/{id}/recommendations:dismiss`   | `Client.DismissRecs`         | todo   |
+| `customers/{id}:generateKeywordIdeas`      | `Client.GenerateKeywordIdeas`| done   |
+| `customers/{id}/recommendations:apply`     | `Client.ApplyRecommendations`| done   |
+| `customers/{id}/recommendations:dismiss`   | `Client.DismissRecommendations`| done |
 
 ## Tools
 
@@ -36,7 +36,7 @@ registration in `registerTools` (mcp.go). Write tools must use the confirm flow.
 | `tools/accounts.rs`              | `tool_accounts.go`       | read  | done   |
 | (search / run_gaql)              | `tool_search.go`         | read  | done   |
 | `tools/budget.rs` (+ write)      | `tool_budget_write.go`   | write | done   |
-| `tools/campaigns.rs`             | `tool_campaigns.go`      | read  | todo   |
+| `tools/campaigns.rs`             | `tool_campaigns.go`      | read  | done   |
 | `tools/campaigns_write.rs`       | `tool_campaigns_write.go`| write | todo   |
 | `tools/ad_groups_write.rs`       | `tool_ad_groups_write.go`| write | todo   |
 | `tools/ads.rs` / `ads_write.rs`  | `tool_ads*.go`           | both  | todo   |
