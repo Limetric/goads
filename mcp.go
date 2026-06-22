@@ -74,6 +74,14 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "report",
 		"Run an arbitrary GAQL query and return results as json (default), table, or csv.",
 		runReport)
+
+	addTool(server, client, "geo_targets",
+		"Search geo target constants by name to find location IDs for geo-targeting.",
+		runGeoTargets)
+
+	addTool(server, client, "geo_performance",
+		"Show geographic performance for campaigns (defaults to the last 30 days).",
+		runGeoPerformance)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
