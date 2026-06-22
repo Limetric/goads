@@ -55,6 +55,42 @@ goads budget set --customer-id 123-456-7890 --budget-id 555 --amount-micros 5000
 Never skip the preview, never guess a token, and never confirm a write the user
 hasn't approved.
 
+## Command reference
+
+**Reads** (print JSON; pipe through `jq`):
+
+| Command | What it shows |
+|---|---|
+| `search` / `report` | run a GAQL query (`report` adds `--format table\|csv`) |
+| `accounts` | accessible customer IDs |
+| `campaigns` / `ads` | campaign- / ad-level performance |
+| `keywords performance` / `keywords search-terms` / `keywords negative` | keyword metrics, search terms, negatives |
+| `geo search` / `geo performance` | find location IDs / geo performance |
+| `conversions` / `policy` / `extensions` | conversion actions / policy issues / extensions |
+| `keyword-ideas` / `keyword-forecasts` | Keyword Planner ideas / recent metrics |
+| `recommendations list` | active recommendations |
+
+**Writes** (two-step preview → `--confirm <token>`):
+
+| Command | Action |
+|---|---|
+| `budget set` | set a campaign budget |
+| `campaign create` / `campaign update` | draft / update a campaign |
+| `adgroup create` / `adgroup update` | create / update an ad group |
+| `ad draft-rsa` | draft a Responsive Search Ad |
+| `keywords add` / `add-negative` / `remove` / `remove-negative` | manage keywords |
+| `bidding create-strategy` / `bidding set-keyword-bid` | portfolio strategy / keyword bid |
+| `extension sitelinks\|callouts\|snippets\|remove` | manage extensions |
+| `audience create` / `audience target` | custom audiences / targeting |
+| `asset image` / `asset text` | upload assets |
+| `schedule` | set ad schedules |
+| `pmax create` | create a Performance Max campaign |
+| `pause` / `enable` / `remove` | change entity status (`remove` is destructive) |
+| `recommendations apply` / `recommendations dismiss` | act on recommendations |
+
+New entities (campaigns, ad groups, ads, PMax) are created **PAUSED** by default;
+the preview's `next_action_hint` shows how to `enable` them afterward.
+
 ## Discovering commands
 
 ```bash

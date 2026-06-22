@@ -66,12 +66,28 @@ The bundled skill (`.claude/skills/goads/SKILL.md`) teaches an agent when and ho
 to drive the CLI — token-efficient because nothing loads until it's relevant, and
 big result sets stay in the shell (`| jq`) instead of the context window.
 
-## Status
+## Tool coverage
 
-Early scaffold. Three tools are wired end-to-end (`search`, `list_accounts`,
-`set_campaign_budget`) to establish the patterns; the rest of the upstream tools
-are tracked in [`docs/PORTING.md`](docs/PORTING.md). See [`AGENTS.md`](AGENTS.md)
-for the contributor workflow and conventions.
+The full upstream tool set is ported (43 MCP tools / equivalent CLI commands):
+
+- **Reads** — `search`, `report` (json/table/csv), `accounts`, `campaigns`, `ads`,
+  keyword performance / search terms / negatives, `geo` search + performance,
+  `conversions`, `policy`, `extensions`, Keyword Planner ideas + forecasts, and
+  recommendations listing.
+- **Writes** (all preview-then-confirm) — campaign create/update, ad group
+  create/update, RSA drafting, keyword add/remove (+ negatives), bidding
+  strategies + keyword bids, sitelink/callout/snippet extensions, audiences,
+  image/text assets, ad scheduling, Performance Max campaigns, pause/enable/remove,
+  and recommendation apply/dismiss.
+
+Write safety: every mutation previews first and applies only on `--confirm`; a
+client-side allow-list rejects invalid `googleAds:mutate` operation keys; and
+guard rails (spend cap, bid-increase limit, blocked-op list) are configurable via
+`GOOGLE_ADS_MAX_DAILY_BUDGET`, `GOOGLE_ADS_MAX_BID_INCREASE_PCT`, and
+`GOOGLE_ADS_BLOCKED_OPS`. New campaigns/ad groups/ads ship **PAUSED** by default.
+
+See [`docs/PORTING.md`](docs/PORTING.md) for the Rust→Go mapping and
+[`AGENTS.md`](AGENTS.md) for the contributor workflow and conventions.
 
 ## License
 

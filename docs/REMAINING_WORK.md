@@ -5,6 +5,13 @@
 > (Rust, commit `084f2e4`, v0.4.1). Read this top to bottom before starting.
 > The companion file [`PORTING.md`](PORTING.md) is the **status table** — update
 > it as you go. This file is the **how**.
+>
+> **Status: complete.** All client endpoints, the mutate allow-list, guards,
+> models, and every read/write tool in [`PORTING.md`](PORTING.md) are ported with
+> offline tests (43 MCP tools / CLI commands). The milestones below are kept as a
+> record of the approach. Live `//go:build integration` smoke tests live in
+> `integration_test.go`. `go build`, `go vet`, `gofmt -l .`, `staticcheck`, and
+> `go test ./...` are all green.
 
 ---
 
