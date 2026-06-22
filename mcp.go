@@ -58,6 +58,18 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "ads",
 		"Show ad-level performance metrics for non-removed ads, ordered by cost.",
 		runAds)
+
+	addTool(server, client, "keyword_performance",
+		"Show keyword-level performance metrics (impressions, clicks, CTR, CPC, cost, conversions, quality score).",
+		runKeywordPerformance)
+
+	addTool(server, client, "search_terms",
+		"Show the actual search terms that triggered ads (defaults to the last 30 days).",
+		runSearchTerms)
+
+	addTool(server, client, "negative_keywords",
+		"List campaign-level negative keywords.",
+		runNegativeKeywords)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
