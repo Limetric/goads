@@ -1,0 +1,131 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestNormalizeCustomerID(t *testing.T) {
+	cases := map[string]string{
+		"123-456-7890":   "1234567890",
+		" 123-456-7890 ": "1234567890",
+		"1234567890":     "1234567890",
+		"":               "",
+	}
+	for in, want := range cases {
+		if got := normalizeCustomerID(in); got != want {
+			t.Errorf("normalizeCustomerID(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// clearAdsEnv blanks every GOOGLE_ADS_* var the loader reads so a developer's
+// real environment can't leak into a config test (t.Setenv restores on cleanup).
+func clearAdsEnv(t *testing.T) {
+	t.Helper()
+	for _, k := range []string{
+		"GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET",
+		"GOOGLE_ADS_REFRESH_TOKEN", "GOOGLE_ADS_LOGIN_CUSTOMER_ID", "GOOGLE_ADS_API_BASE_URL",
+	} {
+		t.Setenv(k, "")
+	}
+}
+
+func TestLoadConfig_EnvOnly(t *testing.T) {
+	useTempState(t) // HOME/XDG → temp, so no real config.toml is found
+	clearAdsEnv(t)
+	t.Setenv("GOOGLE_ADS_DEVELOPER_TOKEN", "devtok")
+	t.Setenv("GOOGLE_ADS_CLIENT_ID", "cid")
+	t.Setenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID", "123-456-7890")
+
+	cfg, err := loadConfig("")
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.DeveloperToken != "devtok" || cfg.ClientID != "cid" {
+		t.Errorf("env not applied: %+v", cfg)
+	}
+	if cfg.LoginCustomerID != "1234567890" {
+		t.Errorf("login id not normalized: %q", cfg.LoginCustomerID)
+	}
+	if cfg.BaseURL != defaultBaseURL {
+		t.Errorf("BaseURL = %q, want default %q", cfg.BaseURL, defaultBaseURL)
+	}
+}
+
+func TestLoadConfig_TOMLOverlaidByEnv(t *testing.T) {
+	clearAdsEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	body := "developer_token = \"from-file\"\nclient_id = \"file-cid\"\nlogin_customer_id = \"999-999-9999\"\n"
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GOOGLE_ADS_DEVELOPER_TOKEN", "from-env") // overrides the file
+
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.DeveloperToken != "from-env" {
+		t.Errorf("env should override file: got %q", cfg.DeveloperToken)
+	}
+	if cfg.ClientID != "file-cid" {
+		t.Errorf("file-only value should remain: got %q", cfg.ClientID)
+	}
+	if cfg.LoginCustomerID != "9999999999" {
+		t.Errorf("login id should be normalized: got %q", cfg.LoginCustomerID)
+	}
+}
+
+func TestLoadConfig_MissingFileErrors(t *testing.T) {
+	clearAdsEnv(t)
+	if _, err := loadConfig("/no/such/config-file.toml"); err == nil {
+		t.Fatal("expected error for an explicit but unreadable config path")
+	}
+}
+
+func TestConfig_Validate(t *testing.T) {
+	missing := (&Config{BaseURL: defaultBaseURL}).validate()
+	if missing == nil {
+		t.Fatal("expected missing-credentials error against production base URL")
+	}
+	for _, want := range []string{
+		"GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CLIENT_ID",
+		"GOOGLE_ADS_CLIENT_SECRET", "GOOGLE_ADS_REFRESH_TOKEN",
+	} {
+		if !strings.Contains(missing.Error(), want) {
+			t.Errorf("error should name %s: %v", want, missing)
+		}
+	}
+	// A non-production base URL relaxes the credential requirement (test mode).
+	if err := (&Config{BaseURL: "http://localhost:1"}).validate(); err != nil {
+		t.Errorf("test base URL should skip validation: %v", err)
+	}
+	// Complete production credentials validate.
+	full := &Config{BaseURL: defaultBaseURL, DeveloperToken: "d", ClientID: "c", ClientSecret: "s", RefreshToken: "r"}
+	if err := full.validate(); err != nil {
+		t.Errorf("complete credentials should validate: %v", err)
+	}
+}
+
+func TestConfig_IsTest(t *testing.T) {
+	if !(&Config{BaseURL: "http://localhost:1"}).isTest() {
+		t.Error("non-production base URL should be a test URL")
+	}
+	if (&Config{BaseURL: defaultBaseURL}).isTest() {
+		t.Error("production base URL should not be a test URL")
+	}
+}
+
+func TestResolveConfigPath(t *testing.T) {
+	if p, _ := resolveConfigPath("/explicit/path.toml"); p != "/explicit/path.toml" {
+		t.Errorf("explicit path should pass through, got %q", p)
+	}
+	useTempState(t) // HOME → temp dir with no config.toml
+	if p, _ := resolveConfigPath(""); p != "" {
+		t.Errorf("a missing default config should resolve to empty, got %q", p)
+	}
+}
