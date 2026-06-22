@@ -40,7 +40,7 @@ registration in `registerTools` (mcp.go). Write tools must use the confirm flow.
 | `tools/campaigns_write.rs`       | `tool_campaigns_write.go`| write | todo   |
 | `tools/ad_groups_write.rs`       | `tool_ad_groups_write.go`| write | done   |
 | `tools/ads.rs` / `ads_write.rs`  | `tool_ads*.go`           | both  | done   |
-| `tools/keywords.rs` / `_write`   | `tool_keywords*.go`      | both  | todo   |
+| `tools/keywords.rs` / `_write`   | `tool_keywords*.go`      | both  | done   |
 | `tools/keyword_planner.rs`       | `tool_keyword_planner.go`| read  | done   |
 | `tools/bidding.rs`               | `tool_bidding.go`        | write | done   |
 | `tools/assets.rs`                | `tool_assets.go`         | both  | done   |

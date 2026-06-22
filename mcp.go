@@ -166,6 +166,22 @@ func registerTools(server *mcp.Server, client *Client) {
 	addTool(server, client, "draft_responsive_search_ad",
 		"Draft a Responsive Search Ad (3-15 headlines, 2-4 descriptions; defaults to PAUSED). Returns a preview + confirm token; pass Confirm to apply.",
 		runDraftResponsiveSearchAd)
+
+	addTool(server, client, "draft_keywords",
+		"Add keywords (with match types) to an ad group. Returns a preview + confirm token; pass Confirm to apply.",
+		runDraftKeywords)
+
+	addTool(server, client, "add_negative_keywords",
+		"Add campaign-level negative keywords. Returns a preview + confirm token; pass Confirm to apply.",
+		runAddNegativeKeywords)
+
+	addTool(server, client, "remove_keywords",
+		"Remove keywords from an ad group by criterion ID (destructive). Returns a preview + confirm token; pass Confirm to apply.",
+		runRemoveKeywords)
+
+	addTool(server, client, "remove_negative_keywords",
+		"Remove campaign-level negative keywords by criterion ID (destructive). Returns a preview + confirm token; pass Confirm to apply.",
+		runRemoveNegativeKeywords)
 }
 
 // addTool adapts a shared handler func(ctx, *Client, A) (R, error) into an MCP
