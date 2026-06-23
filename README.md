@@ -1,5 +1,7 @@
 # goads
 
+[![CI](https://github.com/Limetric/goads/actions/workflows/ci.yml/badge.svg)](https://github.com/Limetric/goads/actions/workflows/ci.yml)
+
 **Google Ads campaign management — a Go CLI and MCP server.**
 
 A Go port of the Rust [`FGRibreau/mcp-google-ads`](https://github.com/FGRibreau/mcp-google-ads).
