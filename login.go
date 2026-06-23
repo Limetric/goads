@@ -68,20 +68,21 @@ func parseCredentialsJSON(data []byte) (clientCreds, error) {
 	}
 }
 
-// writeOAuthToConfig merges the OAuth client id/secret and refresh token into the
-// TOML config at path, preserving any keys already present (developer_token,
-// login_customer_id, base_url, …). The file is written 0600 under a 0700 dir.
-func writeOAuthToConfig(path string, c clientCreds, refreshToken string) error {
+// mergeConfigValues merges the non-empty entries of values into the TOML config
+// at path, preserving any keys already present. Empty values are skipped (so a
+// skipped optional field never overwrites an existing one). 0600 file, 0700 dir.
+func mergeConfigValues(path string, values map[string]string) error {
 	m := map[string]any{}
 	if _, err := os.Stat(path); err == nil {
 		if _, err := toml.DecodeFile(path, &m); err != nil {
 			return fmt.Errorf("read existing config %q: %w", path, err)
 		}
 	}
-	m["client_id"] = c.clientID
-	m["client_secret"] = c.clientSecret
-	m["refresh_token"] = refreshToken
-
+	for k, v := range values {
+		if v != "" {
+			m[k] = v
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
@@ -93,6 +94,16 @@ func writeOAuthToConfig(path string, c clientCreds, refreshToken string) error {
 		return fmt.Errorf("write config %q: %w", path, err)
 	}
 	return nil
+}
+
+// writeOAuthToConfig merges the OAuth client id/secret and refresh token into the
+// TOML config at path, preserving any other keys already present.
+func writeOAuthToConfig(path string, c clientCreds, refreshToken string) error {
+	return mergeConfigValues(path, map[string]string{
+		"client_id":     c.clientID,
+		"client_secret": c.clientSecret,
+		"refresh_token": refreshToken,
+	})
 }
 
 // configWriteTarget returns the file goads login should write to: the explicit
