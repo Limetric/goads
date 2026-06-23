@@ -2,8 +2,11 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
 )
 
 func TestParseCredentialsJSON(t *testing.T) {
@@ -98,4 +101,62 @@ func TestResolveLoginCreds_NoneFound(t *testing.T) {
 // writeFileHelper is a tiny test helper, defined once in login_test.go.
 func writeFileHelper(path, content string) error {
 	return os.WriteFile(path, []byte(content), 0o600)
+}
+
+func TestWriteOAuthToConfig_PreservesExisting(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.toml"
+	if err := writeFileHelper(path, "developer_token = \"devtok\"\nlogin_customer_id = \"123\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeOAuthToConfig(path, clientCreds{clientID: "cid", clientSecret: "csec"}, "rtok"); err != nil {
+		t.Fatal(err)
+	}
+
+	var cfg Config
+	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeveloperToken != "devtok" || cfg.LoginCustomerID != "123" {
+		t.Errorf("existing fields not preserved: %+v", cfg)
+	}
+	if cfg.ClientID != "cid" || cfg.ClientSecret != "csec" || cfg.RefreshToken != "rtok" {
+		t.Errorf("oauth fields not written: %+v", cfg)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("perm = %v, want 0600", perm)
+	}
+}
+
+func TestWriteOAuthToConfig_FreshFile(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/sub/config.toml" // dir does not exist yet
+	if err := writeOAuthToConfig(path, clientCreds{clientID: "cid", clientSecret: "csec"}, "rtok"); err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ClientID != "cid" || cfg.RefreshToken != "rtok" {
+		t.Errorf("got %+v", cfg)
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := fi.Mode().Perm(); perm != 0o600 {
+		t.Errorf("fresh file perm = %v, want 0600", perm)
+	}
+	di, err := os.Stat(filepath.Dir(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if perm := di.Mode().Perm(); perm != 0o700 {
+		t.Errorf("config dir perm = %v, want 0700", perm)
+	}
 }

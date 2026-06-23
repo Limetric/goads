@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"github.com/BurntSushi/toml"
 )
 
 const adwordsScope = "https://www.googleapis.com/auth/adwords"
@@ -49,6 +53,46 @@ func parseCredentialsJSON(data []byte) (clientCreds, error) {
 	default:
 		return clientCreds{}, errors.New("unrecognized credentials format — expected a Desktop-app OAuth client (an \"installed\" block). Download from Google Cloud Console → APIs & Services → Credentials → OAuth 2.0 Client ID → Desktop app")
 	}
+}
+
+// writeOAuthToConfig merges the OAuth client id/secret and refresh token into the
+// TOML config at path, preserving any keys already present (developer_token,
+// login_customer_id, base_url, …). The file is written 0600 under a 0700 dir.
+func writeOAuthToConfig(path string, c clientCreds, refreshToken string) error {
+	m := map[string]any{}
+	if _, err := os.Stat(path); err == nil {
+		if _, err := toml.DecodeFile(path, &m); err != nil {
+			return fmt.Errorf("read existing config %q: %w", path, err)
+		}
+	}
+	m["client_id"] = c.clientID
+	m["client_secret"] = c.clientSecret
+	m["refresh_token"] = refreshToken
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
+	var buf bytes.Buffer
+	if err := toml.NewEncoder(&buf).Encode(m); err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("write config %q: %w", path, err)
+	}
+	return nil
+}
+
+// configWriteTarget returns the file goads login should write to: the explicit
+// --config path if given, otherwise the default per-user config.toml.
+func configWriteTarget(explicit string) (string, error) {
+	if explicit != "" {
+		return explicit, nil
+	}
+	dir, err := userConfigDir()
+	if err != nil {
+		return "", fmt.Errorf("locate config directory: %w", err)
+	}
+	return filepath.Join(dir, defaultConfigFile), nil
 }
 
 // resolveLoginCreds picks the client credentials: an explicit --credentials file
