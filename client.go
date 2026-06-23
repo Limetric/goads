@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"golang.org/x/oauth2"
@@ -100,6 +101,38 @@ func (c *Client) post(ctx context.Context, path string, body, out any) error {
 	return nil
 }
 
+// get issues a GET to {baseURL}/{path} and decodes the JSON response into out.
+// Mirrors post for read-only endpoints that take no body.
+func (c *Client) get(ctx context.Context, path string, out any) error {
+	url := c.cfg.BaseURL + "/" + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	if err := c.buildHeaders(req); err != nil {
+		return err
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("call %s: %w", path, err)
+	}
+	defer resp.Body.Close()
+
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("read %s response: %w", path, err)
+	}
+	if resp.StatusCode >= 300 {
+		return apiError(resp.StatusCode, data)
+	}
+	if out != nil && len(data) > 0 {
+		if err := json.Unmarshal(data, out); err != nil {
+			return fmt.Errorf("decode %s response: %w", path, err)
+		}
+	}
+	return nil
+}
+
 // apiError turns a non-2xx Google Ads response into a readable error.
 func apiError(status int, body []byte) error {
 	var e struct {
@@ -155,6 +188,24 @@ func (c *Client) Search(ctx context.Context, customerID, query string) ([]json.R
 		pageToken = page.NextPageToken
 	}
 	return rows, nil
+}
+
+// ListAccessibleCustomers returns the bare customer IDs the authenticated user
+// can access. It calls customers:listAccessibleCustomers, which needs only a
+// valid OAuth token and developer token — no customer or login-customer-id — so
+// it is the right call to verify a fresh setup works end to end.
+func (c *Client) ListAccessibleCustomers(ctx context.Context) ([]string, error) {
+	var out struct {
+		ResourceNames []string `json:"resourceNames"`
+	}
+	if err := c.get(ctx, "customers:listAccessibleCustomers", &out); err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(out.ResourceNames))
+	for _, rn := range out.ResourceNames {
+		ids = append(ids, strings.TrimPrefix(rn, "customers/"))
+	}
+	return ids, nil
 }
 
 // MutateResponse is the result of a googleAds:mutate call.
