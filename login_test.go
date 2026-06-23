@@ -57,6 +57,31 @@ func TestCLI_LoginAuthorizedUser(t *testing.T) {
 	}
 }
 
+func TestCLI_LoginAuthorizedUser_FreshConfigPath(t *testing.T) {
+	useTempState(t)
+	clearAdsEnv(t)
+	t.Cleanup(func() { configPath = "" }) // --config leaks into the global; reset
+
+	dir := t.TempDir()
+	credPath := dir + "/creds.json"
+	if err := writeFileHelper(credPath, `{"type":"authorized_user","client_id":"cid","client_secret":"csec","refresh_token":"rtok"}`); err != nil {
+		t.Fatal(err)
+	}
+	cfgPath := dir + "/fresh/config.toml" // neither the file nor its dir exists yet
+
+	out, err := runCLI(t, "login", "--credentials", credPath, "--config", cfgPath)
+	if err != nil {
+		t.Fatalf("login failed: %v\n%s", err, out)
+	}
+	var cfg Config
+	if _, err := toml.DecodeFile(cfgPath, &cfg); err != nil {
+		t.Fatalf("config not created at explicit --config path: %v", err)
+	}
+	if cfg.ClientID != "cid" || cfg.RefreshToken != "rtok" {
+		t.Errorf("creds not written: %+v", cfg)
+	}
+}
+
 func TestParseCredentialsJSON(t *testing.T) {
 	tests := []struct {
 		name        string

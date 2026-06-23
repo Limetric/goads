@@ -249,6 +249,23 @@ func openBrowser(url string) error {
 	return exec.Command(name, args...).Start()
 }
 
+// loadLoginConfig loads configuration for `login`. Unlike loadConfig, it
+// tolerates an explicit --config path that does not exist yet: that file is
+// the one login will create, so a missing target means "load env only".
+func loadLoginConfig(path string) (*Config, error) {
+	if path != "" {
+		if _, err := os.Stat(path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				cfg := &Config{}
+				cfg.finalize()
+				return cfg, nil
+			}
+			return nil, fmt.Errorf("stat config %q: %w", path, err)
+		}
+	}
+	return loadConfig(path)
+}
+
 var (
 	loginCredentialsPath string
 	loginPort            int
@@ -261,7 +278,7 @@ var loginCmd = &cobra.Command{
 	Long:  "login runs Google's loopback OAuth2 flow: it opens your browser, captures the\nauthorization code on localhost, exchanges it for a refresh token, and writes\nthe credentials into your goads config. The developer token is still required\nseparately (see `goads doctor`).",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
-		cfg, err := loadConfig(configPath)
+		cfg, err := loadLoginConfig(configPath)
 		if err != nil {
 			return err
 		}

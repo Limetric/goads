@@ -45,12 +45,19 @@ func loadConfig(path string) (*Config, error) {
 		}
 	}
 
+	cfg.finalize()
+	return cfg, nil
+}
+
+// finalize overlays environment variables on top of any file values and applies
+// defaults/normalization. It is the shared tail of config loading so callers
+// (e.g. loadLoginConfig) can build an env-only config without a file.
+func (cfg *Config) finalize() {
 	overlayEnv(cfg)
 	cfg.LoginCustomerID = normalizeCustomerID(cfg.LoginCustomerID)
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
 	}
-	return cfg, nil
 }
 
 func overlayEnv(cfg *Config) {
