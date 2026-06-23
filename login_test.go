@@ -308,6 +308,35 @@ func TestExchangeRefreshToken_Success(t *testing.T) {
 	}
 }
 
+func TestMergeConfigValues_WritesAndPreserves(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/config.toml"
+	if err := writeFileHelper(path, "base_url = \"https://example/v23\"\n"); err != nil {
+		t.Fatal(err)
+	}
+	err := mergeConfigValues(path, map[string]string{
+		"developer_token":   "devtok",
+		"login_customer_id": "1234567890",
+		"client_id":         "", // empty → must NOT be written
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	if _, err := toml.DecodeFile(path, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.BaseURL != "https://example/v23" {
+		t.Errorf("preserved key lost: %+v", cfg)
+	}
+	if cfg.DeveloperToken != "devtok" || cfg.LoginCustomerID != "1234567890" {
+		t.Errorf("values not written: %+v", cfg)
+	}
+	if cfg.ClientID != "" {
+		t.Errorf("empty value should not be written, got %q", cfg.ClientID)
+	}
+}
+
 func TestExchangeRefreshToken_NoRefreshToken(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

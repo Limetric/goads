@@ -21,7 +21,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
+	"golang.org/x/term"
 )
 
 const adwordsScope = "https://www.googleapis.com/auth/adwords"
@@ -68,20 +68,21 @@ func parseCredentialsJSON(data []byte) (clientCreds, error) {
 	}
 }
 
-// writeOAuthToConfig merges the OAuth client id/secret and refresh token into the
-// TOML config at path, preserving any keys already present (developer_token,
-// login_customer_id, base_url, …). The file is written 0600 under a 0700 dir.
-func writeOAuthToConfig(path string, c clientCreds, refreshToken string) error {
+// mergeConfigValues merges the non-empty entries of values into the TOML config
+// at path, preserving any keys already present. Empty values are skipped (so a
+// skipped optional field never overwrites an existing one). 0600 file, 0700 dir.
+func mergeConfigValues(path string, values map[string]string) error {
 	m := map[string]any{}
 	if _, err := os.Stat(path); err == nil {
 		if _, err := toml.DecodeFile(path, &m); err != nil {
 			return fmt.Errorf("read existing config %q: %w", path, err)
 		}
 	}
-	m["client_id"] = c.clientID
-	m["client_secret"] = c.clientSecret
-	m["refresh_token"] = refreshToken
-
+	for k, v := range values {
+		if v != "" {
+			m[k] = v
+		}
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create config dir: %w", err)
 	}
@@ -93,6 +94,16 @@ func writeOAuthToConfig(path string, c clientCreds, refreshToken string) error {
 		return fmt.Errorf("write config %q: %w", path, err)
 	}
 	return nil
+}
+
+// writeOAuthToConfig merges the OAuth client id/secret and refresh token into the
+// TOML config at path, preserving any other keys already present.
+func writeOAuthToConfig(path string, c clientCreds, refreshToken string) error {
+	return mergeConfigValues(path, map[string]string{
+		"client_id":     c.clientID,
+		"client_secret": c.clientSecret,
+		"refresh_token": refreshToken,
+	})
 }
 
 // configWriteTarget returns the file goads login should write to: the explicit
@@ -270,7 +281,18 @@ var (
 	loginCredentialsPath string
 	loginPort            int
 	loginNoBrowser       bool
+	loginNoInput         bool
 )
+
+// isInteractiveLogin reports whether `goads login` should run the guided wizard:
+// stdin is a real terminal, --no-input was not passed, and the non-interactive
+// --credentials shortcut was not used.
+func isInteractiveLogin() bool {
+	if loginNoInput || loginCredentialsPath != "" {
+		return false
+	}
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
@@ -278,6 +300,23 @@ var loginCmd = &cobra.Command{
 	Long:  "login runs Google's loopback OAuth2 flow: it opens your browser, captures the\nauthorization code on localhost, exchanges it for a refresh token, and writes\nthe credentials into your goads config. The developer token is still required\nseparately (see `goads doctor`).",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if isInteractiveLogin() {
+			cfg, err := loadLoginConfig(configPath)
+			if err != nil {
+				return err
+			}
+			openFn := openBrowser
+			if loginNoBrowser {
+				openFn = func(u string) error {
+					fmt.Fprintf(cmd.OutOrStdout(), "Open this URL:\n  %s\n", u)
+					return nil
+				}
+			}
+			p := newTTYPrompter(os.Stdin, cmd.OutOrStdout(), int(os.Stdin.Fd()))
+			return runLoginWizard(cmd.Context(), cmd.OutOrStdout(), p, cfg, openFn, loginPort)
+		}
+
+		// --- non-interactive path (unchanged) ---
 		cfg, err := loadLoginConfig(configPath)
 		if err != nil {
 			return err
@@ -302,7 +341,7 @@ var loginCmd = &cobra.Command{
 			conf := &oauth2.Config{
 				ClientID:     creds.clientID,
 				ClientSecret: creds.clientSecret,
-				Endpoint:     google.Endpoint,
+				Endpoint:     googleOAuthEndpoint,
 				RedirectURL:  fmt.Sprintf("http://localhost:%d", loginPort),
 				Scopes:       []string{adwordsScope},
 			}
@@ -353,4 +392,5 @@ func init() {
 	loginCmd.Flags().StringVar(&loginCredentialsPath, "credentials", "", "path to a Desktop-app OAuth client JSON downloaded from Google Cloud Console")
 	loginCmd.Flags().IntVar(&loginPort, "port", 8085, "loopback port for the OAuth callback")
 	loginCmd.Flags().BoolVar(&loginNoBrowser, "no-browser", false, "print the auth URL instead of opening a browser")
+	loginCmd.Flags().BoolVar(&loginNoInput, "no-input", false, "never prompt; fail if credentials are missing (for scripts/CI)")
 }

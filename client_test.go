@@ -101,6 +101,34 @@ func TestGenerateKeywordIdeas(t *testing.T) {
 	}
 }
 
+func TestListAccessibleCustomers(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/customers:listAccessibleCustomers" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("developer-token") == "" {
+			t.Error("developer-token header not set")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"resourceNames":["customers/1234567890","customers/9876543210"]}`))
+	}))
+	defer srv.Close()
+
+	cfg := &Config{BaseURL: srv.URL} // non-prod base → isTest(), lenient auth
+	c, err := NewClient(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := c.ListAccessibleCustomers(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"1234567890", "9876543210"}
+	if len(ids) != len(want) || ids[0] != want[0] || ids[1] != want[1] {
+		t.Fatalf("got %v, want %v", ids, want)
+	}
+}
+
 func TestApplyAndDismissRecommendations(t *testing.T) {
 	t.Run("apply sends partialFailure and resource names", func(t *testing.T) {
 		var gotBody map[string]any
