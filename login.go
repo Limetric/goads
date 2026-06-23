@@ -21,7 +21,7 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/google"
+	"golang.org/x/term"
 )
 
 const adwordsScope = "https://www.googleapis.com/auth/adwords"
@@ -281,7 +281,18 @@ var (
 	loginCredentialsPath string
 	loginPort            int
 	loginNoBrowser       bool
+	loginNoInput         bool
 )
+
+// isInteractiveLogin reports whether `goads login` should run the guided wizard:
+// stdin is a real terminal, --no-input was not passed, and the non-interactive
+// --credentials shortcut was not used.
+func isInteractiveLogin() bool {
+	if loginNoInput || loginCredentialsPath != "" {
+		return false
+	}
+	return term.IsTerminal(int(os.Stdin.Fd()))
+}
 
 var loginCmd = &cobra.Command{
 	Use:   "login",
@@ -289,6 +300,23 @@ var loginCmd = &cobra.Command{
 	Long:  "login runs Google's loopback OAuth2 flow: it opens your browser, captures the\nauthorization code on localhost, exchanges it for a refresh token, and writes\nthe credentials into your goads config. The developer token is still required\nseparately (see `goads doctor`).",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
+		if isInteractiveLogin() {
+			cfg, err := loadLoginConfig(configPath)
+			if err != nil {
+				return err
+			}
+			openFn := openBrowser
+			if loginNoBrowser {
+				openFn = func(u string) error {
+					fmt.Fprintf(cmd.OutOrStdout(), "Open this URL:\n  %s\n", u)
+					return nil
+				}
+			}
+			p := newTTYPrompter(os.Stdin, cmd.OutOrStdout(), int(os.Stdin.Fd()))
+			return runLoginWizard(cmd.Context(), cmd.OutOrStdout(), p, cfg, openFn, loginPort)
+		}
+
+		// --- non-interactive path (unchanged) ---
 		cfg, err := loadLoginConfig(configPath)
 		if err != nil {
 			return err
@@ -313,7 +341,7 @@ var loginCmd = &cobra.Command{
 			conf := &oauth2.Config{
 				ClientID:     creds.clientID,
 				ClientSecret: creds.clientSecret,
-				Endpoint:     google.Endpoint,
+				Endpoint:     googleOAuthEndpoint,
 				RedirectURL:  fmt.Sprintf("http://localhost:%d", loginPort),
 				Scopes:       []string{adwordsScope},
 			}
@@ -364,4 +392,5 @@ func init() {
 	loginCmd.Flags().StringVar(&loginCredentialsPath, "credentials", "", "path to a Desktop-app OAuth client JSON downloaded from Google Cloud Console")
 	loginCmd.Flags().IntVar(&loginPort, "port", 8085, "loopback port for the OAuth callback")
 	loginCmd.Flags().BoolVar(&loginNoBrowser, "no-browser", false, "print the auth URL instead of opening a browser")
+	loginCmd.Flags().BoolVar(&loginNoInput, "no-input", false, "never prompt; fail if credentials are missing (for scripts/CI)")
 }

@@ -1,11 +1,20 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/BurntSushi/toml"
+	"golang.org/x/oauth2"
 )
 
 // fakePrompter returns scripted answers per method, in order.
@@ -212,5 +221,113 @@ func TestExpandHome(t *testing.T) {
 	}
 	if got := expandHome("~/Downloads/c.json"); got != filepath.Join(home, "Downloads/c.json") {
 		t.Errorf("~/ expansion: got %q", got)
+	}
+}
+
+// freePort returns a currently-free localhost port for the loopback OAuth server.
+func freePort(t *testing.T) int {
+	t.Helper()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer l.Close()
+	return l.Addr().(*net.TCPAddr).Port
+}
+
+func TestRunLoginWizard_HappyPath(t *testing.T) {
+	useTempState(t)
+	clearAdsEnv(t)
+
+	// One httptest server doubles as the OAuth token endpoint and the Ads API.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/token":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"access_token":"at","refresh_token":"rt","token_type":"Bearer","expires_in":3600}`)
+		case r.URL.Path == "/customers:listAccessibleCustomers":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"resourceNames":["customers/1234567890"]}`)
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer srv.Close()
+
+	// Point OAuth token exchange and the Ads API at the test server.
+	oldEndpoint := googleOAuthEndpoint
+	googleOAuthEndpoint = oauth2.Endpoint{AuthURL: srv.URL + "/auth", TokenURL: srv.URL + "/token"}
+	t.Cleanup(func() { googleOAuthEndpoint = oldEndpoint })
+	t.Setenv("GOOGLE_ADS_API_BASE_URL", srv.URL)
+
+	cfg, err := loadLoginConfig("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// OAuth client JSON the wizard will read.
+	jsonPath := t.TempDir() + "/c.json"
+	if err := writeFileHelper(jsonPath, `{"installed":{"client_id":"cid","client_secret":"csec"}}`); err != nil {
+		t.Fatal(err)
+	}
+
+	port := freePort(t)
+	// openFn fires the loopback callback with the state extracted from the auth URL.
+	openFn := func(authURL string) error {
+		u, perr := url.Parse(authURL)
+		if perr != nil {
+			return perr
+		}
+		st := u.Query().Get("state")
+		go http.Get(fmt.Sprintf("http://127.0.0.1:%d/?code=testcode&state=%s", port, st))
+		return nil
+	}
+
+	// Scripted answers, in call order:
+	//   confirms: step1 open? n, step2 open? n, step4 open? n
+	//   lines:    step1 enter, step2 enter, JSON path, step4 enter, login id (skip)
+	//   secrets:  developer token
+	p := &fakePrompter{
+		confirms: []bool{false, false, false},
+		lines:    []string{"", "", jsonPath, "", ""},
+		secrets:  []string{"devtok"},
+	}
+
+	var out strings.Builder
+	if err := runLoginWizard(context.Background(), &out, p, cfg, openFn, port); err != nil {
+		t.Fatalf("wizard failed: %v\n%s", err, out.String())
+	}
+
+	if !strings.Contains(out.String(), "Connected") || !strings.Contains(out.String(), "123-456-7890") {
+		t.Errorf("missing verify line:\n%s", out.String())
+	}
+
+	target, err := configWriteTarget("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written Config
+	if _, err := toml.DecodeFile(target, &written); err != nil {
+		t.Fatal(err)
+	}
+	if written.ClientID != "cid" || written.RefreshToken != "rt" || written.DeveloperToken != "devtok" {
+		t.Errorf("config not fully written: %+v", written)
+	}
+}
+
+func TestIsInteractiveLogin_NoInputFlag(t *testing.T) {
+	// --no-input forces non-interactive regardless of TTY.
+	loginNoInput = true
+	t.Cleanup(func() { loginNoInput = false })
+	if isInteractiveLogin() {
+		t.Error("--no-input must force non-interactive")
+	}
+}
+
+func TestIsInteractiveLogin_CredentialsFlag(t *testing.T) {
+	loginCredentialsPath = "/some/file.json"
+	t.Cleanup(func() { loginCredentialsPath = "" })
+	if isInteractiveLogin() {
+		t.Error("--credentials must force non-interactive")
 	}
 }

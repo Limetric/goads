@@ -1,14 +1,22 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 	"golang.org/x/term"
 )
+
+// googleOAuthEndpoint is the production OAuth endpoint. It is a package var so
+// tests can point the token exchange at an httptest server.
+var googleOAuthEndpoint = google.Endpoint
 
 // prompter is the wizard's input surface. The real implementation reads a TTY;
 // tests inject a fake with scripted answers.
@@ -244,4 +252,128 @@ func wizardGatherLoginCustomerID(p prompter, out io.Writer, cfg *Config) (string
 		return cfg.LoginCustomerID, nil
 	}
 	return normalizeCustomerID(v), nil
+}
+
+// wizardGatherRefreshToken reuses an existing sign-in or runs the loopback OAuth
+// flow to mint a new refresh token.
+func wizardGatherRefreshToken(ctx context.Context, p prompter, out io.Writer, creds clientCreds, cfg *Config, openFn func(string) error, port int) (string, error) {
+	if creds.kind == "authorized_user" && creds.refreshToken != "" {
+		return creds.refreshToken, nil
+	}
+	if cfg.RefreshToken != "" && creds.kind == "config" {
+		choice, err := p.line("   Reuse your existing sign-in, or sign in again? [reuse/new]: ")
+		if err != nil {
+			return "", err
+		}
+		if choice == "" || strings.HasPrefix(strings.ToLower(choice), "r") {
+			fmt.Fprintln(out, "   reusing existing sign-in.")
+			return cfg.RefreshToken, nil
+		}
+	}
+	conf := &oauth2.Config{
+		ClientID:     creds.clientID,
+		ClientSecret: creds.clientSecret,
+		Endpoint:     googleOAuthEndpoint,
+		RedirectURL:  fmt.Sprintf("http://localhost:%d", port),
+		Scopes:       []string{adwordsScope},
+	}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return "", fmt.Errorf("listen on %s: %w — is the port busy? pass --port", addr, err)
+	}
+	fmt.Fprintln(out, "   Opening Google sign-in…")
+	fmt.Fprintf(out, "   Waiting for callback on http://localhost:%d …\n", port)
+	code, err := runLoopbackOAuth(ctx, conf, openFn, ln)
+	if err != nil {
+		return "", err
+	}
+	rt, err := exchangeRefreshToken(ctx, conf, code)
+	if err != nil {
+		return "", err
+	}
+	fmt.Fprintln(out, "   ✓ Signed in. Got your refresh token.")
+	return rt, nil
+}
+
+// runLoginWizard guides first-time setup end to end: prerequisites, OAuth client,
+// sign-in, developer token, optional MCC id, then writes config and verifies with
+// a live API call.
+func runLoginWizard(ctx context.Context, out io.Writer, p prompter, cfg *Config, openFn func(string) error, port int) error {
+	fmt.Fprintln(out, "Welcome to goads. Let's get you connected to Google Ads.")
+	fmt.Fprintln(out, "You'll need: a Google Cloud project, a Desktop-app OAuth client, and a")
+	fmt.Fprintln(out, "Google Ads developer token. I'll walk you through each — about 5 minutes.")
+	fmt.Fprintln(out)
+
+	fmt.Fprintln(out, "Step 1/5 · Google Cloud project + Google Ads API")
+	if err := offerToOpen(p, out, "Sign in, pick or create a project, and click Enable.", urlEnableAPI, openFn); err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "\nStep 2/5 · Desktop-app OAuth client")
+	creds, err := wizardGatherClient(p, out, cfg, openFn)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "\nStep 3/5 · Sign in (browser)")
+	refreshToken, err := wizardGatherRefreshToken(ctx, p, out, creds, cfg, openFn, port)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "\nStep 4/5 · Developer token")
+	devToken, err := wizardGatherDeveloperToken(p, out, cfg, openFn)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintln(out, "\nStep 5/5 · Manager (MCC) account ID — optional")
+	loginCID, err := wizardGatherLoginCustomerID(p, out, cfg)
+	if err != nil {
+		return err
+	}
+
+	target, err := configWriteTarget(configPath)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "\nSaving to %s …\n", target)
+	if err := mergeConfigValues(target, map[string]string{
+		"client_id":         creds.clientID,
+		"client_secret":     creds.clientSecret,
+		"refresh_token":     refreshToken,
+		"developer_token":   devToken,
+		"login_customer_id": loginCID,
+	}); err != nil {
+		return err
+	}
+
+	// Verify with the live config (config is already saved — nothing is lost on failure).
+	final := *cfg
+	final.ClientID = creds.clientID
+	final.ClientSecret = creds.clientSecret
+	final.RefreshToken = refreshToken
+	final.DeveloperToken = devToken
+	final.LoginCustomerID = loginCID
+	fmt.Fprint(out, "Verifying… ")
+	client, err := NewClient(ctx, &final)
+	if err == nil {
+		var ids []string
+		ids, err = client.ListAccessibleCustomers(ctx)
+		if err == nil {
+			dashed := make([]string, len(ids))
+			for i, id := range ids {
+				dashed[i] = dashCustomerID(id)
+			}
+			fmt.Fprintf(out, "✓ Connected — %d accessible account(s): %s\n", len(ids), strings.Join(dashed, ", "))
+			fmt.Fprintln(out, "\nYou're ready. Try:  goads accounts")
+			return nil
+		}
+	}
+	fmt.Fprintln(out, "✗")
+	fmt.Fprintf(out, "Saved your config, but verification failed: %v\n", err)
+	fmt.Fprintln(out, "Likely: the developer token isn't approved yet or was mistyped, or an OAuth problem.")
+	fmt.Fprintln(out, "Fix it and re-run `goads login`, or run `goads doctor`.")
+	return fmt.Errorf("verification failed: %w", err)
 }
