@@ -224,6 +224,20 @@ func writeCallbackPage(w http.ResponseWriter, ok bool, msg string) {
 // the goads-login command (Task 4) wires it up as the default openFn.
 var _ = openBrowser
 
+// exchangeRefreshToken trades an authorization code for tokens and returns the
+// refresh token. A missing refresh token almost always means a misconfigured
+// OAuth client, so the error spells out the usual causes.
+func exchangeRefreshToken(ctx context.Context, conf *oauth2.Config, code string) (string, error) {
+	tok, err := conf.Exchange(ctx, code)
+	if err != nil {
+		return "", fmt.Errorf("exchange authorization code: %w", err)
+	}
+	if tok.RefreshToken == "" {
+		return "", errors.New("no refresh_token in response — common causes: wrong OAuth client type (need Desktop app, not Web application), the loopback redirect URI is not authorized, or the Google Ads API is not enabled in the project")
+	}
+	return tok.RefreshToken, nil
+}
+
 func openBrowser(url string) error {
 	var name string
 	var args []string

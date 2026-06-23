@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -220,5 +222,36 @@ func TestRunLoopbackOAuth_AuthError(t *testing.T) {
 	_, err := runLoopbackOAuth(context.Background(), conf, openFn, ln)
 	if err == nil || !strings.Contains(err.Error(), "access_denied") {
 		t.Fatalf("expected auth error, got %v", err)
+	}
+}
+
+func TestExchangeRefreshToken_Success(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"at","refresh_token":"rt","token_type":"Bearer","expires_in":3600}`)
+	}))
+	defer ts.Close()
+
+	conf := &oauth2.Config{ClientID: "id", ClientSecret: "sec", Endpoint: oauth2.Endpoint{TokenURL: ts.URL}}
+	rt, err := exchangeRefreshToken(context.Background(), conf, "code")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt != "rt" {
+		t.Fatalf("got refresh token %q", rt)
+	}
+}
+
+func TestExchangeRefreshToken_NoRefreshToken(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"access_token":"at","token_type":"Bearer","expires_in":3600}`)
+	}))
+	defer ts.Close()
+
+	conf := &oauth2.Config{ClientID: "id", ClientSecret: "sec", Endpoint: oauth2.Endpoint{TokenURL: ts.URL}}
+	_, err := exchangeRefreshToken(context.Background(), conf, "code")
+	if err == nil || !strings.Contains(err.Error(), "Desktop app") {
+		t.Fatalf("expected actionable no-refresh-token error, got %v", err)
 	}
 }
