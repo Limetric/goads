@@ -5,7 +5,7 @@ Google Ads MCP server + CLI, in Go. A Go port of the Rust
 Single binary, all source in `package main` at the repo root (pgferry-style flat
 layout). The binary exposes two front-ends over one shared set of tool handlers:
 
-- **CLI** — `goads search …`, `goads accounts`, `goads budget set …` (for humans,
+- **CLI** — `goads login`, `goads search …`, `goads accounts`, `goads budget set …` (for humans,
   scripts, CI, and the agent skill that drives it via shell).
 - **MCP server** — `goads mcp` serves the same tools over stdio for MCP hosts
   (Claude Desktop, Cursor, …).

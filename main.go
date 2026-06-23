@@ -50,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(doctorCmd)
+	rootCmd.AddCommand(loginCmd)
 
 	// Tool subcommands. Each tool_*.go registers its CLI command here and its
 	// MCP tool in registerTools (mcp.go) — keep the two in sync.
