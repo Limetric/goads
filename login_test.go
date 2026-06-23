@@ -16,6 +16,47 @@ import (
 	"golang.org/x/oauth2"
 )
 
+func TestCLI_LoginAuthorizedUser(t *testing.T) {
+	useTempState(t) // HOME/XDG → temp, so the default config path is sandboxed
+	clearAdsEnv(t)
+
+	credPath := t.TempDir() + "/creds.json"
+	if err := writeFileHelper(credPath, `{"type":"authorized_user","client_id":"cid","client_secret":"csec","refresh_token":"rtok"}`); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-create the default config with an existing field to verify the merge.
+	target, err := configWriteTarget("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeFileHelper(target, "developer_token = \"pre\"\n"); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCLI(t, "login", "--credentials", credPath)
+	if err != nil {
+		t.Fatalf("login failed: %v\n%s", err, out)
+	}
+	if !strings.Contains(out, "Wrote credentials") || !strings.Contains(out, "GOOGLE_ADS_REFRESH_TOKEN") {
+		t.Errorf("unexpected output:\n%s", out)
+	}
+
+	var cfg Config
+	if _, err := toml.DecodeFile(target, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DeveloperToken != "pre" {
+		t.Errorf("existing developer_token not preserved: %+v", cfg)
+	}
+	if cfg.ClientID != "cid" || cfg.RefreshToken != "rtok" {
+		t.Errorf("oauth fields not written: %+v", cfg)
+	}
+}
+
 func TestParseCredentialsJSON(t *testing.T) {
 	tests := []struct {
 		name        string

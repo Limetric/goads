@@ -19,7 +19,9 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/spf13/cobra"
 	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
 
 const adwordsScope = "https://www.googleapis.com/auth/adwords"
@@ -219,11 +221,6 @@ func writeCallbackPage(w http.ResponseWriter, ok bool, msg string) {
 	_, _ = io.WriteString(w, "<h1>Authorization failed</h1><p>"+html.EscapeString(msg)+"</p>")
 }
 
-// openBrowser opens url in the user's default browser (best effort).
-// Referenced here so static analysis does not flag it as unused before
-// the goads-login command (Task 4) wires it up as the default openFn.
-var _ = openBrowser
-
 // exchangeRefreshToken trades an authorization code for tokens and returns the
 // refresh token. A missing refresh token almost always means a misconfigured
 // OAuth client, so the error spells out the usual causes.
@@ -250,4 +247,93 @@ func openBrowser(url string) error {
 		name, args = "xdg-open", []string{url}
 	}
 	return exec.Command(name, args...).Start()
+}
+
+var (
+	loginCredentialsPath string
+	loginPort            int
+	loginNoBrowser       bool
+)
+
+var loginCmd = &cobra.Command{
+	Use:   "login",
+	Short: "Sign in to Google Ads via OAuth2 and save a refresh token",
+	Long:  "login runs Google's loopback OAuth2 flow: it opens your browser, captures the\nauthorization code on localhost, exchanges it for a refresh token, and writes\nthe credentials into your goads config. The developer token is still required\nseparately (see `goads doctor`).",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		cfg, err := loadConfig(configPath)
+		if err != nil {
+			return err
+		}
+		creds, err := resolveLoginCreds(cfg, loginCredentialsPath)
+		if err != nil {
+			return err
+		}
+		out := cmd.OutOrStdout()
+		fmt.Fprintln(out, "=== Google Ads OAuth2 sign-in ===")
+
+		refreshToken := creds.refreshToken
+		if creds.kind == "authorized_user" {
+			if refreshToken == "" {
+				return errors.New("authorized_user credentials file has no refresh_token")
+			}
+			fmt.Fprintln(out, "Credentials file already contains a refresh token; skipping browser sign-in.")
+		} else {
+			if creds.kind == "web" {
+				fmt.Fprintln(out, "Warning: this is a Web-application client; loopback sign-in expects a Desktop-app client. Trying anyway.")
+			}
+			conf := &oauth2.Config{
+				ClientID:     creds.clientID,
+				ClientSecret: creds.clientSecret,
+				Endpoint:     google.Endpoint,
+				RedirectURL:  fmt.Sprintf("http://localhost:%d", loginPort),
+				Scopes:       []string{adwordsScope},
+			}
+			addr := fmt.Sprintf("127.0.0.1:%d", loginPort)
+			ln, err := net.Listen("tcp", addr)
+			if err != nil {
+				return fmt.Errorf("listen on %s: %w — is the port busy? pass --port", addr, err)
+			}
+			openFn := openBrowser
+			if loginNoBrowser {
+				openFn = func(u string) error {
+					fmt.Fprintf(out, "Open this URL in your browser:\n  %s\n", u)
+					return nil
+				}
+			} else {
+				fmt.Fprintln(out, "Opening browser for Google sign-in…")
+			}
+			fmt.Fprintf(out, "Waiting for callback on http://localhost:%d …\n", loginPort)
+			code, err := runLoopbackOAuth(cmd.Context(), conf, openFn, ln)
+			if err != nil {
+				return err
+			}
+			refreshToken, err = exchangeRefreshToken(cmd.Context(), conf, code)
+			if err != nil {
+				return err
+			}
+			fmt.Fprintln(out, "✓ Authorized. Exchanged code for refresh token.")
+		}
+
+		target, err := configWriteTarget(configPath)
+		if err != nil {
+			return err
+		}
+		if err := writeOAuthToConfig(target, creds, refreshToken); err != nil {
+			return err
+		}
+		fmt.Fprintf(out, "✓ Wrote credentials to %s\n\n", target)
+		fmt.Fprintln(out, "For CI / MCP host config, set:")
+		fmt.Fprintf(out, "  export GOOGLE_ADS_CLIENT_ID=%q\n", creds.clientID)
+		fmt.Fprintf(out, "  export GOOGLE_ADS_CLIENT_SECRET=%q\n", creds.clientSecret)
+		fmt.Fprintf(out, "  export GOOGLE_ADS_REFRESH_TOKEN=%q\n\n", refreshToken)
+		fmt.Fprintln(out, "Run `goads doctor` to verify. (developer token still required.)")
+		return nil
+	},
+}
+
+func init() {
+	loginCmd.Flags().StringVar(&loginCredentialsPath, "credentials", "", "path to a Desktop-app OAuth client JSON downloaded from Google Cloud Console")
+	loginCmd.Flags().IntVar(&loginPort, "port", 8085, "loopback port for the OAuth callback")
+	loginCmd.Flags().BoolVar(&loginNoBrowser, "no-browser", false, "print the auth URL instead of opening a browser")
 }
