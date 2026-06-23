@@ -1,12 +1,17 @@
 package main
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/BurntSushi/toml"
+	"golang.org/x/oauth2"
 )
 
 func TestParseCredentialsJSON(t *testing.T) {
@@ -158,5 +163,62 @@ func TestWriteOAuthToConfig_FreshFile(t *testing.T) {
 	}
 	if perm := di.Mode().Perm(); perm != 0o700 {
 		t.Errorf("config dir perm = %v, want 0700", perm)
+	}
+}
+
+// fireCallback returns an openFn that simulates the browser redirect by GETting
+// the loopback callback with the given query, reusing the state from authURL.
+func fireCallback(ln net.Listener, query func(state string) string) func(string) error {
+	return func(authURL string) error {
+		u, err := url.Parse(authURL)
+		if err != nil {
+			return err
+		}
+		state := u.Query().Get("state")
+		go http.Get("http://" + ln.Addr().String() + "/?" + query(state)) //nolint:errcheck
+		return nil
+	}
+}
+
+func newLoopbackConf(t *testing.T) (*oauth2.Config, net.Listener) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &oauth2.Config{RedirectURL: "http://" + ln.Addr().String()}, ln
+}
+
+func TestRunLoopbackOAuth_CapturesCode(t *testing.T) {
+	conf, ln := newLoopbackConf(t)
+	openFn := fireCallback(ln, func(state string) string {
+		return "code=testcode&state=" + state
+	})
+	code, err := runLoopbackOAuth(context.Background(), conf, openFn, ln)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code != "testcode" {
+		t.Fatalf("got code %q", code)
+	}
+}
+
+func TestRunLoopbackOAuth_StateMismatch(t *testing.T) {
+	conf, ln := newLoopbackConf(t)
+	openFn := fireCallback(ln, func(string) string { return "code=x&state=wrong" })
+	_, err := runLoopbackOAuth(context.Background(), conf, openFn, ln)
+	if err == nil || !strings.Contains(err.Error(), "state") {
+		t.Fatalf("expected state mismatch error, got %v", err)
+	}
+}
+
+func TestRunLoopbackOAuth_AuthError(t *testing.T) {
+	conf, ln := newLoopbackConf(t)
+	openFn := fireCallback(ln, func(string) string {
+		return "error=access_denied&error_description=denied"
+	})
+	_, err := runLoopbackOAuth(context.Background(), conf, openFn, ln)
+	if err == nil || !strings.Contains(err.Error(), "access_denied") {
+		t.Fatalf("expected auth error, got %v", err)
 	}
 }
