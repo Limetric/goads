@@ -331,3 +331,23 @@ func TestIsInteractiveLogin_CredentialsFlag(t *testing.T) {
 		t.Error("--credentials must force non-interactive")
 	}
 }
+
+func TestOfferToOpen_NoBrowserSkipsConfirm(t *testing.T) {
+	loginNoBrowser = true
+	t.Cleanup(func() { loginNoBrowser = false })
+	opened := false
+	p := &fakePrompter{lines: []string{""}} // only the "Press Enter" line
+	err := offerToOpen(p, io.Discard, "do the thing", "https://example", func(string) error {
+		opened = true
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if opened {
+		t.Error("--no-browser must not open a browser")
+	}
+	if p.ci != 0 {
+		t.Errorf("--no-browser must not consume a confirm, ci=%d", p.ci)
+	}
+}

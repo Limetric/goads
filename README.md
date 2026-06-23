@@ -15,6 +15,18 @@ as a single binary with two front-ends over one shared set of tools:
 
 ## Quick start
 
+The fastest way to get set up is the guided sign-in — it walks you through the
+Google Cloud + developer-token prerequisites, signs you in via the browser, and
+verifies the connection:
+
+```bash
+go build -o build/goads .
+build/goads login            # interactive: guides you from scratch, then verifies
+```
+
+Prefer to wire it up manually (or in CI)? Set the environment directly and skip
+the wizard with `--no-input`:
+
 ```bash
 go mod tidy
 go build -o build/goads .

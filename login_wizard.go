@@ -350,6 +350,9 @@ func runLoginWizard(ctx context.Context, out io.Writer, p prompter, cfg *Config,
 	}
 
 	// Verify with the live config (config is already saved — nothing is lost on failure).
+	// In production this also exercises the live refresh-token→access-token exchange;
+	// under a test base URL the token source is static, so the offline test covers
+	// transport + parsing only.
 	final := *cfg
 	final.ClientID = creds.clientID
 	final.ClientSecret = creds.clientSecret
