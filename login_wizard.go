@@ -166,6 +166,30 @@ func offerToOpen(p prompter, out io.Writer, instruction, url string, openFn func
 	return err
 }
 
+// confirmBrowserOpen returns an openFn for the loopback sign-in that always shows
+// the consent URL first and, unless --no-browser, asks before launching a browser
+// — mirroring offerToOpen so Step 3 doesn't pop a browser unannounced. Declining
+// (or --no-browser) leaves the URL on screen for the user to open manually; the
+// loopback server waits for the callback either way.
+func confirmBrowserOpen(p prompter, out io.Writer, port int, openFn func(string) error) func(string) error {
+	return func(u string) error {
+		fmt.Fprintf(out, "   Sign in to Google to authorize goads.\n   → %s\n", u)
+		if !loginNoBrowser {
+			open, err := p.confirm("   Open this now?", true)
+			if err != nil {
+				return err
+			}
+			if open {
+				if e := openFn(u); e != nil {
+					fmt.Fprintf(out, "   (couldn't open a browser: %v — open the URL above manually)\n", e)
+				}
+			}
+		}
+		fmt.Fprintf(out, "   Waiting for callback on http://localhost:%d …\n", port)
+		return nil
+	}
+}
+
 // wizardGatherClient resolves the OAuth client: reuse an existing one from cfg,
 // or guide the user to download a Desktop-app JSON and read it (re-prompting on
 // a bad path).
@@ -282,9 +306,7 @@ func wizardGatherRefreshToken(ctx context.Context, p prompter, out io.Writer, cr
 	if err != nil {
 		return "", fmt.Errorf("listen on %s: %w — is the port busy? pass --port", addr, err)
 	}
-	fmt.Fprintln(out, "   Opening Google sign-in…")
-	fmt.Fprintf(out, "   Waiting for callback on http://localhost:%d …\n", port)
-	code, err := runLoopbackOAuth(ctx, conf, openFn, ln)
+	code, err := runLoopbackOAuth(ctx, conf, confirmBrowserOpen(p, out, port, openFn), ln)
 	if err != nil {
 		return "", err
 	}

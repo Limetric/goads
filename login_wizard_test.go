@@ -284,11 +284,11 @@ func TestRunLoginWizard_HappyPath(t *testing.T) {
 	}
 
 	// Scripted answers, in call order:
-	//   confirms: step1 open? n, step2 open? n, step4 open? n
+	//   confirms: step1 open? n, step2 open? n, step3 open? y (fires callback), step4 open? n
 	//   lines:    step1 enter, step2 enter, JSON path, step4 enter, login id (skip)
 	//   secrets:  developer token
 	p := &fakePrompter{
-		confirms: []bool{false, false, false},
+		confirms: []bool{false, false, true, false},
 		lines:    []string{"", "", jsonPath, "", ""},
 		secrets:  []string{"devtok"},
 	}
@@ -329,6 +329,62 @@ func TestIsInteractiveLogin_CredentialsFlag(t *testing.T) {
 	t.Cleanup(func() { loginCredentialsPath = "" })
 	if isInteractiveLogin() {
 		t.Error("--credentials must force non-interactive")
+	}
+}
+
+func TestConfirmBrowserOpen_ShowsURLAndOpensOnYes(t *testing.T) {
+	var opened string
+	p := &fakePrompter{confirms: []bool{true}} // Open this now? → yes
+	var out strings.Builder
+	wrapped := confirmBrowserOpen(p, &out, 8080, func(u string) error { opened = u; return nil })
+	if err := wrapped("https://accounts.google.com/auth?x=1"); err != nil {
+		t.Fatal(err)
+	}
+	if opened != "https://accounts.google.com/auth?x=1" {
+		t.Errorf("openFn not called with URL, got %q", opened)
+	}
+	if !strings.Contains(out.String(), "https://accounts.google.com/auth?x=1") {
+		t.Errorf("consent URL must be shown before opening, got: %q", out.String())
+	}
+	if p.ci != 1 {
+		t.Errorf("expected exactly one confirm consumed, ci=%d", p.ci)
+	}
+}
+
+func TestConfirmBrowserOpen_DeclineDoesNotOpenButShowsURL(t *testing.T) {
+	opened := false
+	p := &fakePrompter{confirms: []bool{false}} // Open this now? → no
+	var out strings.Builder
+	wrapped := confirmBrowserOpen(p, &out, 8080, func(string) error { opened = true; return nil })
+	if err := wrapped("https://example/auth"); err != nil {
+		t.Fatal(err)
+	}
+	if opened {
+		t.Error("declining must not open a browser")
+	}
+	if !strings.Contains(out.String(), "https://example/auth") {
+		t.Errorf("URL must still be shown so the user can open it manually, got: %q", out.String())
+	}
+}
+
+func TestConfirmBrowserOpen_NoBrowserSkipsConfirm(t *testing.T) {
+	loginNoBrowser = true
+	t.Cleanup(func() { loginNoBrowser = false })
+	opened := false
+	p := &fakePrompter{}
+	var out strings.Builder
+	wrapped := confirmBrowserOpen(p, &out, 8080, func(string) error { opened = true; return nil })
+	if err := wrapped("https://example/auth"); err != nil {
+		t.Fatal(err)
+	}
+	if opened {
+		t.Error("--no-browser must not open a browser")
+	}
+	if p.ci != 0 {
+		t.Errorf("--no-browser must not consume a confirm, ci=%d", p.ci)
+	}
+	if !strings.Contains(out.String(), "https://example/auth") {
+		t.Errorf("URL must be shown so the user can open it manually, got: %q", out.String())
 	}
 }
 
