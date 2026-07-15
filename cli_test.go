@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -12,13 +14,74 @@ import (
 // isolates config to a temp HOME and resets the shared command's args after.
 func runCLI(t *testing.T, args ...string) (string, error) {
 	t.Helper()
+	configPath = ""
 	var out bytes.Buffer
 	rootCmd.SetOut(&out)
 	rootCmd.SetErr(&out)
 	rootCmd.SetArgs(args)
-	t.Cleanup(func() { rootCmd.SetArgs(nil) })
+	t.Cleanup(func() {
+		configPath = ""
+		rootCmd.SetArgs(nil)
+	})
 	err := rootCmd.Execute()
 	return out.String(), err
+}
+
+func TestCLI_ConfigPath(t *testing.T) {
+	t.Run("explicit path", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "custom config.toml")
+		out, err := runCLI(t, "config", "path", "--config", path)
+		if err != nil {
+			t.Fatalf("execute config path: %v\noutput: %s", err, out)
+		}
+		if want := path + "\n"; out != want {
+			t.Errorf("config path output = %q, want %q", out, want)
+		}
+	})
+
+	t.Run("default path", func(t *testing.T) {
+		useTempState(t)
+		dir, err := userConfigDir()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(dir, defaultConfigFile)
+		if err := os.WriteFile(path, nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+
+		out, err := runCLI(t, "config", "path")
+		if err != nil {
+			t.Fatalf("execute config path: %v\noutput: %s", err, out)
+		}
+		if want := path + "\n"; out != want {
+			t.Errorf("config path output = %q, want %q", out, want)
+		}
+	})
+
+	t.Run("environment only", func(t *testing.T) {
+		useTempState(t)
+		t.Setenv("GOOGLE_ADS_DEVELOPER_TOKEN", "must-not-be-printed")
+		out, err := runCLI(t, "config", "path")
+		if err != nil {
+			t.Fatalf("execute config path: %v\noutput: %s", err, out)
+		}
+		if want := "environment only (no config file)\n"; out != want {
+			t.Errorf("config path output = %q, want %q", out, want)
+		}
+		if strings.Contains(out, "must-not-be-printed") {
+			t.Errorf("config path output leaked a credential: %q", out)
+		}
+	})
+
+	t.Run("rejects arguments", func(t *testing.T) {
+		if out, err := runCLI(t, "config", "path", "extra"); err == nil {
+			t.Fatalf("config path should reject arguments; output: %s", out)
+		}
+	})
 }
 
 func TestCLI_AccountsCommand(t *testing.T) {

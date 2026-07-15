@@ -11,8 +11,10 @@ import (
 func useTempState(t *testing.T) {
 	t.Helper()
 	tmp := t.TempDir()
-	t.Setenv("HOME", tmp)                                  // darwin + linux fallback
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(tmp, "cfg")) // linux
+	configDir := filepath.Join(tmp, "cfg")
+	t.Setenv("HOME", tmp)                  // darwin + Unix fallback
+	t.Setenv("XDG_CONFIG_HOME", configDir) // Unix
+	t.Setenv("APPDATA", configDir)         // Windows
 }
 
 func TestConfirmFlow_RoundTrip(t *testing.T) {
