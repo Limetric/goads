@@ -1,0 +1,20 @@
+{
+  "name": "goads",
+  "interface": {
+    "displayName": "goads"
+  },
+  "plugins": [
+    {
+      "name": "goads",
+      "source": {
+        "source": "local",
+        "path": "./plugins/goads"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_USE"
+      },
+      "category": "Productivity"
+    }
+  ]
+}

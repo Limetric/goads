@@ -81,19 +81,40 @@ Point your MCP host at the binary:
 
 ## As a Claude Code skill
 
-The bundled skill (`.claude/skills/goads/SKILL.md`) teaches an agent when and how
-to drive the CLI — token-efficient because nothing loads until it's relevant, and
-big result sets stay in the shell (`| jq`) instead of the context window.
+The repo bundles a skill (`plugins/goads/skills/goads/SKILL.md`, symlinked at
+`.claude/skills/goads` for contributors working in a clone) that teaches an agent
+when and how to drive the CLI — token-efficient because nothing loads until it's
+relevant, and big result sets stay in the shell (`| jq`) instead of the context
+window.
+
+If you installed `goads` via Homebrew and don't have the repo cloned, install the
+skill as a Claude Code plugin instead:
+
+```text
+/plugin marketplace add Limetric/goads
+/plugin install goads@goads
+```
+
+## As a Codex plugin
+
+Codex reads the same skill through its own plugin manifest:
+
+```bash
+codex plugin marketplace add Limetric/goads
+codex plugin add goads@goads
+```
 
 ## Tool coverage
 
-The full upstream tool set is ported (43 MCP tools / equivalent CLI commands):
+The full upstream tool set plus first-class App campaign creation is available
+(47 MCP tools / equivalent CLI commands):
 
 - **Reads** — `search`, `report` (json/table/csv), `accounts`, `campaigns`, `ads`,
   keyword performance / search terms / negatives, `geo` search + performance,
   `conversions`, `policy`, `extensions`, Keyword Planner ideas + forecasts, and
   recommendations listing.
-- **Writes** (all preview-then-confirm) — campaign create/update, ad group
+- **Writes** (all preview-then-confirm) — Search, App, and Performance Max
+  campaign create/update, ad group
   create/update, RSA drafting, keyword add/remove (+ negatives), bidding
   strategies + keyword bids, sitelink/callout/snippet extensions, audiences,
   image/text assets, ad scheduling, Performance Max campaigns, pause/enable/remove,
