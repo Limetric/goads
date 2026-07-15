@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -133,19 +134,96 @@ func (c *Client) get(ctx context.Context, path string, out any) error {
 	return nil
 }
 
+// apiStatusError is a non-2xx Google Ads API response. It carries the HTTP
+// status so callers can distinguish a definitive client error (4xx — the
+// request or credentials are wrong) from a transient server error (5xx). A
+// transport failure (no response at all) is a plain error, not this type.
+type apiStatusError struct {
+	status int
+	msg    string
+}
+
+func (e *apiStatusError) Error() string { return e.msg }
+
+// isClientError reports whether the status is 4xx: the server understood the
+// request and rejected it based on what we sent (bad credentials, permission,
+// arguments), i.e. a setup problem the user must fix.
+func (e *apiStatusError) isClientError() bool { return e.status >= 400 && e.status < 500 }
+
+// apiErrorDetail mirrors one entry of a Google Ads error's details[] array
+// (the GoogleAdsFailure payload) — the part that carries the specific,
+// actionable error code and message.
+type apiErrorDetail struct {
+	Errors []struct {
+		ErrorCode map[string]any `json:"errorCode"`
+		Message   string         `json:"message"`
+	} `json:"errors"`
+}
+
 // apiError turns a non-2xx Google Ads response into a readable error.
+//
+// The top-level message is often generic ("The caller does not have
+// permission"). The actionable detail — the specific errorCode and its
+// human-readable message (e.g. DEVELOPER_TOKEN_NOT_APPROVED, "apply for Basic
+// or Standard access") — lives in error.details[].errors[] of a GoogleAdsFailure.
+// We surface those so the CLI tells the user what to actually fix.
 func apiError(status int, body []byte) error {
 	var e struct {
 		Error struct {
-			Code    int    `json:"code"`
-			Message string `json:"message"`
-			Status  string `json:"status"`
+			Code    int              `json:"code"`
+			Message string           `json:"message"`
+			Status  string           `json:"status"`
+			Details []apiErrorDetail `json:"details"`
 		} `json:"error"`
 	}
 	if json.Unmarshal(body, &e) == nil && e.Error.Message != "" {
-		return fmt.Errorf("google ads API %d (%s): %s", status, e.Error.Status, e.Error.Message)
+		msg := fmt.Sprintf("google ads API %d (%s): %s", status, e.Error.Status, e.Error.Message)
+		if detail := formatAdsFailures(e.Error.Details); detail != "" {
+			msg += " — " + detail
+		}
+		return &apiStatusError{status: status, msg: msg}
 	}
-	return fmt.Errorf("google ads API %d: %s", status, string(body))
+	return &apiStatusError{status: status, msg: fmt.Sprintf("google ads API %d: %s", status, string(body))}
+}
+
+// formatAdsFailures flattens the GoogleAdsFailure error list into a single
+// readable string, e.g.
+// "authorizationError.DEVELOPER_TOKEN_NOT_APPROVED: The developer token is …".
+// Multiple errors are joined with " | ". Returns "" when there is nothing extra
+// to add beyond the top-level message.
+func formatAdsFailures(details []apiErrorDetail) string {
+	var parts []string
+	for _, d := range details {
+		for _, e := range d.Errors {
+			code := formatErrorCode(e.ErrorCode)
+			switch {
+			case code != "" && e.Message != "":
+				parts = append(parts, code+": "+e.Message)
+			case code != "":
+				parts = append(parts, code)
+			case e.Message != "":
+				parts = append(parts, e.Message)
+			}
+		}
+	}
+	return strings.Join(parts, " | ")
+}
+
+// formatErrorCode renders an errorCode object like
+// {"authorizationError":"DEVELOPER_TOKEN_NOT_APPROVED"} as
+// "authorizationError.DEVELOPER_TOKEN_NOT_APPROVED". Keys are sorted so the
+// output is deterministic when more than one is present (rare).
+func formatErrorCode(code map[string]any) string {
+	keys := make([]string, 0, len(code))
+	for k := range code {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	parts := make([]string, 0, len(keys))
+	for _, k := range keys {
+		parts = append(parts, fmt.Sprintf("%s.%v", k, code[k]))
+	}
+	return strings.Join(parts, ",")
 }
 
 // --- Operations -----------------------------------------------------------

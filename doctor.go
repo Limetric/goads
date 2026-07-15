@@ -1,15 +1,26 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
 
-// doctorCmd reports whether credentials resolve, without making an API call.
+// doctorOffline backs the `--offline` flag: by default doctor makes real API
+// calls to verify the setup can query; --offline skips them and only checks
+// that credentials resolve (fast, deterministic, no network — for CI/offline).
+var doctorOffline bool
+
+// doctorCmd reports whether the setup works. By default it probes the API so
+// "ready" means real queries succeed, not just that the credential strings are
+// present. --offline reduces it to the cheap config-only check.
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
-	Short: "Check that credentials and configuration resolve",
+	Short: "Check that the Google Ads setup works (config + live API check)",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		cfg, err := loadConfig(configPath)
@@ -27,9 +38,108 @@ var doctorCmd = &cobra.Command{
 			fmt.Fprintf(out, "\nstatus: NOT READY — %v\n", err)
 			return err
 		}
-		fmt.Fprintf(out, "\nstatus: ready\n")
-		return nil
+
+		if doctorOffline {
+			fmt.Fprintf(out, "\nstatus: ready — credentials resolve (offline check). Run `goads doctor` to verify against the API.\n")
+			return nil
+		}
+
+		fmt.Fprintln(out)
+		res, liveErr := runDoctorLive(cmd.Context(), out, cfg)
+		switch res {
+		case liveOK:
+			fmt.Fprintf(out, "\nstatus: ready (live check passed)\n")
+			return nil
+		case liveInconclusive:
+			fmt.Fprintf(out, "\nstatus: INCONCLUSIVE — credentials resolve, but the API couldn't be reached (network/transient). Setup unconfirmed, not necessarily broken.\n")
+			return &exitErr{code: 2, err: liveErr}
+		default: // liveFailed
+			fmt.Fprintf(out, "\nstatus: NOT READY — the API rejected the request (see above)\n")
+			return &exitErr{code: 1, err: liveErr}
+		}
 	},
+}
+
+// liveResult is the outcome of doctor's live check.
+type liveResult int
+
+const (
+	liveOK           liveResult = iota // the API answered and real queries work
+	liveInconclusive                   // couldn't reach the API (transport/5xx) — setup unconfirmed, not broken
+	liveFailed                         // the API definitively rejected us (4xx) — setup is broken
+)
+
+// liveVerdictFor classifies a live-probe error. A 4xx from the Ads API is
+// definitive — the request or credentials are wrong (liveFailed). Anything else
+// — a 5xx, a connection failure, an OAuth/token error — means we simply
+// couldn't get a verdict (liveInconclusive), which must not be reported as a
+// broken setup.
+func liveVerdictFor(err error) liveResult {
+	if err == nil {
+		return liveOK
+	}
+	var apiErr *apiStatusError
+	if errors.As(err, &apiErr) && apiErr.isClientError() {
+		return liveFailed
+	}
+	return liveInconclusive
+}
+
+// runDoctorLive makes real API calls to prove the setup works, printing a line
+// per probe (✓ ok, ✗ definitive failure, ? inconclusive). It runs two probes
+// because they fail independently:
+//
+//  1. listAccessibleCustomers — needs only OAuth + developer token, so it
+//     confirms credentials are valid and lists reachable accounts. A test-level
+//     developer token still passes this.
+//  2. a real customer_client search on the login customer — what every read
+//     command does. Unlike probe 1 it fails when the developer token is only
+//     approved for test accounts (DEVELOPER_TOKEN_NOT_APPROVED), the exact gap
+//     that made plain `doctor` say "ready" for a setup that can't query.
+//
+// It returns the verdict of the first probe that doesn't pass, so the caller can
+// set the status line and exit code.
+func runDoctorLive(ctx context.Context, out io.Writer, cfg *Config) (liveResult, error) {
+	client, err := NewClient(ctx, cfg)
+	if err != nil {
+		return reportProbe(out, "client:              ", err), err
+	}
+
+	ids, err := client.ListAccessibleCustomers(ctx)
+	if err != nil {
+		return reportProbe(out, "accessible accounts: ", err), err
+	}
+	dashed := make([]string, len(ids))
+	for i, id := range ids {
+		dashed[i] = dashCustomerID(id)
+	}
+	fmt.Fprintf(out, "accessible accounts:  ✓ %d (%s)\n", len(ids), strings.Join(dashed, ", "))
+
+	if cfg.LoginCustomerID == "" {
+		fmt.Fprintf(out, "live query:           skipped (no login_customer_id set)\n")
+		return liveOK, nil
+	}
+	res, err := runAccounts(ctx, client, AccountsArgs{})
+	if err != nil {
+		return reportProbe(out, "live query:          ", err), err
+	}
+	fmt.Fprintf(out, "live query:           ✓ %d account(s) reachable under %s\n", len(res.CustomerIDs), dashCustomerID(cfg.LoginCustomerID))
+	return liveOK, nil
+}
+
+// reportProbe prints a failed probe line — ✗ for a definitive failure, ? for an
+// inconclusive one — and returns the classification. label should be padded to
+// align with the ✓ lines (a trailing space follows the marker).
+func reportProbe(out io.Writer, label string, err error) liveResult {
+	verdict := liveVerdictFor(err)
+	marker := "?"
+	prefix := "could not reach the API: "
+	if verdict == liveFailed {
+		marker = "✗"
+		prefix = ""
+	}
+	fmt.Fprintf(out, "%s %s %s%v\n", label, marker, prefix, err)
+	return verdict
 }
 
 func present(s string) string {

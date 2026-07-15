@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -55,6 +56,46 @@ func TestAPIError(t *testing.T) {
 	plain := apiError(500, []byte("upstream exploded"))
 	if !strings.Contains(plain.Error(), "500") || !strings.Contains(plain.Error(), "upstream exploded") {
 		t.Errorf("plain-text fallback not surfaced: %v", plain)
+	}
+}
+
+// TestAPIError_GoogleAdsFailureDetails checks that the inner GoogleAdsFailure —
+// where the API hides the actionable error code and message — is surfaced, not
+// just the generic top-level "The caller does not have permission".
+func TestAPIError_GoogleAdsFailureDetails(t *testing.T) {
+	body := []byte(`{
+      "error": {
+        "code": 403,
+        "message": "The caller does not have permission",
+        "status": "PERMISSION_DENIED",
+        "details": [
+          {
+            "@type": "type.googleapis.com/google.ads.googleads.v23.errors.GoogleAdsFailure",
+            "errors": [
+              {
+                "errorCode": {"authorizationError": "DEVELOPER_TOKEN_NOT_APPROVED"},
+                "message": "The developer token is only approved for use with test accounts. To access non-test accounts, apply for Basic or Standard access."
+              }
+            ]
+          }
+        ]
+      }
+    }`)
+	err := apiError(403, body)
+	msg := err.Error()
+	for _, want := range []string{
+		"PERMISSION_DENIED",
+		"DEVELOPER_TOKEN_NOT_APPROVED",
+		"apply for Basic or Standard access",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("error missing %q:\n%s", want, msg)
+		}
+	}
+	// It carries the HTTP status so callers can classify it (4xx = definitive).
+	var apiErr *apiStatusError
+	if !errors.As(err, &apiErr) || apiErr.status != 403 {
+		t.Errorf("apiError should carry status 403, got %v", err)
 	}
 }
 

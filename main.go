@@ -6,11 +6,23 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
 	"github.com/spf13/cobra"
 )
+
+// exitErr lets a command request a specific process exit code. When a command
+// returns one, it has already printed its own diagnostics, so main() exits with
+// the requested code without printing the generic "error:" line.
+type exitErr struct {
+	code int
+	err  error
+}
+
+func (e *exitErr) Error() string { return e.err.Error() }
+func (e *exitErr) Unwrap() error { return e.err }
 
 // configPath is the optional --config flag (a TOML credentials/settings file).
 // When empty, configuration comes from the environment and the default path.
@@ -46,6 +58,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "path to TOML credentials/settings file (env overrides)")
 
 	versionCmd.Flags().BoolVarP(&versionVerbose, "verbose", "v", false, "print detailed build metadata")
+	doctorCmd.Flags().BoolVar(&doctorOffline, "offline", false, "skip the live API check; only verify that credentials resolve")
 
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(mcpCmd)
@@ -83,8 +96,16 @@ func init() {
 }
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+	err := rootCmd.Execute()
+	if err == nil {
+		return
 	}
+	// A command that carries its own exit code has already reported details;
+	// just exit with that code (e.g. doctor's inconclusive vs failed).
+	var ex *exitErr
+	if errors.As(err, &ex) {
+		os.Exit(ex.code)
+	}
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
 }
