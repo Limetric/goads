@@ -119,9 +119,21 @@ func registerTools(server *mcp.Server, client *Client) {
 		"Upload a base64-encoded image asset. Returns a preview + confirm token; pass Confirm to apply.",
 		runUploadImageAsset)
 
+	addTool(server, client, "upload_youtube_video_asset",
+		"Create an asset referencing an existing YouTube video. Returns a preview + confirm token; pass Confirm to apply.",
+		runUploadYouTubeVideoAsset)
+
+	addTool(server, client, "upload_youtube_video",
+		"Upload a local MP4 to a Google-managed unlisted YouTube channel. Returns a preview + confirm token; pass Confirm to apply.",
+		runUploadYouTubeVideo)
+
 	addTool(server, client, "upload_text_asset",
 		"Upload a reusable text asset. Returns a preview + confirm token; pass Confirm to apply.",
 		runUploadTextAsset)
+
+	addTool(server, client, "draft_app_ad",
+		"Draft an App campaign ad with text, image, and YouTube assets. Returns a preview + confirm token; pass Confirm to apply.",
+		runDraftAppAd)
 
 	addTool(server, client, "pause_entity",
 		"Pause a campaign, ad group, ad, or keyword. Returns a preview + confirm token; pass Confirm to apply.",

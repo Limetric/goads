@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -288,8 +290,19 @@ func (c *Client) ListAccessibleCustomers(ctx context.Context) ([]string, error) 
 
 // MutateResponse is the result of a googleAds:mutate call.
 type MutateResponse struct {
+	// MutateOperationResponses is the response field used by googleAds:mutate.
+	MutateOperationResponses []json.RawMessage `json:"mutateOperationResponses"`
+	// Results is retained for compatibility with older mock servers and any
+	// endpoint variant that returns the conventional results field.
 	Results       []json.RawMessage `json:"results"`
 	PartialErrors json.RawMessage   `json:"partialFailureError,omitempty"`
+}
+
+func (r *MutateResponse) operationResults() []json.RawMessage {
+	if len(r.MutateOperationResponses) > 0 {
+		return r.MutateOperationResponses
+	}
+	return r.Results
 }
 
 // Mutate applies a batch of mutate operations for one customer. Callers are
@@ -310,6 +323,104 @@ func (c *Client) Mutate(ctx context.Context, customerID string, ops []any) (*Mut
 		return nil, err
 	}
 	return &out, nil
+}
+
+// YouTubeVideoUploadResponse is returned after a resumable video upload is
+// finalized. The video is processed asynchronously; query you_tube_video_upload
+// before creating a YouTube video asset from its video_id.
+type YouTubeVideoUploadResponse struct {
+	ResourceName string `json:"resourceName"`
+}
+
+// UploadYouTubeVideo uploads a local MP4 to the Google-managed YouTube channel
+// associated with the Ads account. Google-managed uploads are always unlisted.
+func (c *Client) UploadYouTubeVideo(ctx context.Context, customerID, filePath, title, description string) (*YouTubeVideoUploadResponse, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, fmt.Errorf("open video file: %w", err)
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat video file: %w", err)
+	}
+	if info.Size() == 0 {
+		return nil, fmt.Errorf("video file is empty")
+	}
+
+	customerID = normalizeCustomerID(customerID)
+	metadata := map[string]any{
+		"customerId": customerID,
+		"youTubeVideoUpload": map[string]any{
+			"videoTitle":       title,
+			"videoDescription": description,
+			"videoPrivacy":     "UNLISTED",
+		},
+	}
+	var body bytes.Buffer
+	if err := json.NewEncoder(&body).Encode(metadata); err != nil {
+		return nil, fmt.Errorf("encode video metadata: %w", err)
+	}
+	uploadBaseURL := strings.TrimSuffix(c.cfg.BaseURL, "/v23") + "/resumable/upload/v23"
+	startURL := fmt.Sprintf("%s/customers/%s/youTubeVideoUploads:create", uploadBaseURL, customerID)
+	startReq, err := http.NewRequestWithContext(ctx, http.MethodPost, startURL, &body)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.buildHeaders(startReq); err != nil {
+		return nil, err
+	}
+	startReq.Header.Set("X-Goog-Upload-Protocol", "resumable")
+	startReq.Header.Set("X-Goog-Upload-Command", "start")
+	startReq.Header.Set("X-Goog-Upload-Header-Content-Length", strconv.FormatInt(info.Size(), 10))
+	startResp, err := c.http.Do(startReq)
+	if err != nil {
+		return nil, fmt.Errorf("start YouTube video upload: %w", err)
+	}
+	defer startResp.Body.Close()
+	startData, err := io.ReadAll(startResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read video upload start response: %w", err)
+	}
+	if startResp.StatusCode >= 300 {
+		return nil, apiError(startResp.StatusCode, startData)
+	}
+	uploadURL := startResp.Header.Get("X-Goog-Upload-URL")
+	if uploadURL == "" {
+		return nil, fmt.Errorf("start YouTube video upload: response omitted X-Goog-Upload-URL")
+	}
+
+	uploadReq, err := http.NewRequestWithContext(ctx, http.MethodPut, uploadURL, file)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.buildHeaders(uploadReq); err != nil {
+		return nil, err
+	}
+	uploadReq.Header.Set("Content-Type", "video/mp4")
+	uploadReq.Header.Set("X-Goog-Upload-Offset", "0")
+	uploadReq.Header.Set("X-Goog-Upload-Command", "upload, finalize")
+	uploadReq.ContentLength = info.Size()
+	uploadResp, err := c.http.Do(uploadReq)
+	if err != nil {
+		return nil, fmt.Errorf("upload YouTube video bytes: %w", err)
+	}
+	defer uploadResp.Body.Close()
+	uploadData, err := io.ReadAll(uploadResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("read video upload response: %w", err)
+	}
+	if uploadResp.StatusCode >= 300 {
+		return nil, apiError(uploadResp.StatusCode, uploadData)
+	}
+	var response YouTubeVideoUploadResponse
+	if err := json.Unmarshal(uploadData, &response); err != nil {
+		return nil, fmt.Errorf("decode video upload response: %w", err)
+	}
+	if response.ResourceName == "" {
+		return nil, fmt.Errorf("video upload response omitted resourceName")
+	}
+	return &response, nil
 }
 
 // GenerateKeywordIdeas calls the Keyword Planner generateKeywordIdeas endpoint

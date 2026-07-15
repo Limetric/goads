@@ -47,7 +47,7 @@ func mutateServer(t *testing.T) (*httptest.Server, *mutateCapture) {
 			_ = json.NewDecoder(r.Body).Decode(&cap.lastBody)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":[{"resourceName":"customers/1/x/2"}]}`))
+		_, _ = w.Write([]byte(`{"mutateOperationResponses":[{"assetResult":{"resourceName":"customers/1/x/2"}}]}`))
 	}))
 	return srv, cap
 }
@@ -104,5 +104,28 @@ func TestWriteHelpers_PreviewThenApply(t *testing.T) {
 	}
 	if !done.Applied || cap.calls != 1 {
 		t.Fatalf("apply failed: result=%+v calls=%d", done, cap.calls)
+	}
+	if len(done.ResourceNames) != 1 || done.ResourceNames[0] != "customers/1/x/2" {
+		t.Fatalf("resource names = %v", done.ResourceNames)
+	}
+}
+
+func TestApplyConfirmed_RejectsPartialFailure(t *testing.T) {
+	useTempState(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{}],"partialFailureError":{"code":3,"message":"invalid asset"}}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	op := map[string]any{"assetOperation": map[string]any{"create": map[string]any{"name": "bad"}}}
+	preview, err := previewMutate("test_tool", "123", "bad mutation", []any{op})
+	if err != nil {
+		t.Fatalf("previewMutate: %v", err)
+	}
+
+	if _, err := applyConfirmed(t.Context(), c, "test_tool", preview.Token); err == nil || !strings.Contains(err.Error(), "invalid asset") {
+		t.Fatalf("expected partial failure error, got %v", err)
 	}
 }

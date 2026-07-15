@@ -6,9 +6,73 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestUploadYouTubeVideo(t *testing.T) {
+	videoData := []byte("fake mp4 bytes")
+	videoPath := filepath.Join(t.TempDir(), "creative.mp4")
+	if err := os.WriteFile(videoPath, videoData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/resumable/upload/v23/customers/1234567890/youTubeVideoUploads:create":
+			if r.Method != http.MethodPost {
+				t.Errorf("start method = %s, want POST", r.Method)
+			}
+			if got := r.Header.Get("X-Goog-Upload-Protocol"); got != "resumable" {
+				t.Errorf("upload protocol = %q", got)
+			}
+			if got := r.Header.Get("X-Goog-Upload-Header-Content-Length"); got != "14" {
+				t.Errorf("upload length = %q", got)
+			}
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			upload, _ := body["youTubeVideoUpload"].(map[string]any)
+			if upload["videoPrivacy"] != "UNLISTED" || upload["videoTitle"] != "CMV creative" {
+				t.Errorf("unexpected metadata: %v", upload)
+			}
+			w.Header().Set("X-Goog-Upload-URL", srv.URL+"/upload")
+			w.WriteHeader(http.StatusOK)
+		case "/upload":
+			if r.Method != http.MethodPut {
+				t.Errorf("upload method = %s, want PUT", r.Method)
+			}
+			if got := r.Header.Get("X-Goog-Upload-Command"); got != "upload, finalize" {
+				t.Errorf("upload command = %q", got)
+			}
+			got, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(videoData) {
+				t.Errorf("uploaded bytes = %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"resourceName":"customers/1234567890/youTubeVideoUploads/456"}`))
+		default:
+			t.Errorf("unexpected path %q", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	response, err := newTestClient(t, srv).UploadYouTubeVideo(t.Context(), "123-456-7890", videoPath, "CMV creative", "Description")
+	if err != nil {
+		t.Fatalf("UploadYouTubeVideo: %v", err)
+	}
+	if response.ResourceName != "customers/1234567890/youTubeVideoUploads/456" {
+		t.Fatalf("resource name = %q", response.ResourceName)
+	}
+}
 
 func TestValidateMutateOps(t *testing.T) {
 	t.Run("accepts known keys", func(t *testing.T) {

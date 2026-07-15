@@ -47,6 +47,27 @@ func TestCreateAdGroup_ExplicitEnabledNoHint(t *testing.T) {
 	}
 }
 
+func TestCreateAdGroup_CanOmitTypeForAppCampaign(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := CreateAdGroupArgs{CustomerID: "1", CampaignID: "2", Name: "App creatives", OmitType: true}
+	preview, err := runCreateAdGroup(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	args.Confirm = preview.Token
+	if _, err := runCreateAdGroup(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	create := opCreate(t, cap.firstOp(t), "adGroupOperation")
+	if _, exists := create["type"]; exists {
+		t.Fatalf("App ad group must omit type: %v", create)
+	}
+}
+
 func TestCreateAdGroup_EmptyName(t *testing.T) {
 	if _, err := runCreateAdGroup(t.Context(), nil, CreateAdGroupArgs{CustomerID: "1", CampaignID: "1"}); err == nil {
 		t.Fatal("expected error for empty name")

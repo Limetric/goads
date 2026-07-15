@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strconv"
 )
 
@@ -25,6 +27,9 @@ type WriteResult struct {
 	Token   string `json:"confirm_token,omitempty"`
 	Preview string `json:"preview,omitempty"`
 	Detail  string `json:"detail,omitempty"`
+	// ResourceNames contains resources created or changed by the confirmed
+	// mutation, when Google Ads returned them.
+	ResourceNames []string `json:"resource_names,omitempty"`
 	// StatusAfterApply is the lifecycle status the entity will hold once
 	// applied (set by create tools so agents know whether to enable it).
 	StatusAfterApply string `json:"status_after_apply,omitempty"`
@@ -65,10 +70,65 @@ func applyConfirmed(ctx context.Context, c *Client, tool, confirm string) (Write
 	if err != nil {
 		return WriteResult{}, err
 	}
-	if err := applyPending(ctx, c, p); err != nil {
+	outcome, err := applyPending(ctx, c, p)
+	if err != nil {
 		auditLog(p, false)
 		return WriteResult{}, toolError(tool, err)
 	}
 	auditLog(p, true)
-	return WriteResult{Applied: true, Detail: p.Summary}, nil
+	return WriteResult{
+		Applied:       true,
+		Detail:        p.Summary,
+		ResourceNames: resourceNamesFromResults(outcome.Results),
+	}, nil
+}
+
+func partialFailureError(raw json.RawMessage) error {
+	if len(raw) == 0 || string(raw) == "null" || string(raw) == "{}" {
+		return nil
+	}
+	var status struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Details json.RawMessage `json:"details"`
+	}
+	if err := json.Unmarshal(raw, &status); err != nil {
+		return fmt.Errorf("decode Google Ads partial failure: %w", err)
+	}
+	if status.Code == 0 && status.Message == "" && len(status.Details) == 0 {
+		return nil
+	}
+	if status.Message == "" {
+		status.Message = string(raw)
+	}
+	return fmt.Errorf("google ads mutation partially failed (code %d): %s", status.Code, status.Message)
+}
+
+func resourceNamesFromResults(results []json.RawMessage) []string {
+	seen := make(map[string]bool)
+	var names []string
+	var walk func(any)
+	walk = func(value any) {
+		switch value := value.(type) {
+		case map[string]any:
+			if name, ok := value["resourceName"].(string); ok && name != "" && !seen[name] {
+				seen[name] = true
+				names = append(names, name)
+			}
+			for _, nested := range value {
+				walk(nested)
+			}
+		case []any:
+			for _, nested := range value {
+				walk(nested)
+			}
+		}
+	}
+	for _, result := range results {
+		var value any
+		if json.Unmarshal(result, &value) == nil {
+			walk(value)
+		}
+	}
+	return names
 }

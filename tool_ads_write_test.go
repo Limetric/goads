@@ -96,3 +96,70 @@ func TestDraftRSA_Blocked(t *testing.T) {
 		t.Fatal("expected blocked-operation error")
 	}
 }
+
+func TestDraftAppAd_PreviewThenApply(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := DraftAppAdArgs{
+		CustomerID: "123-456-7890",
+		AdGroupID:  "111",
+		Headlines:  []string{"Chat met nieuwe mensen", "Start direct een gesprek"},
+		Descriptions: []string{
+			"Ontmoet nieuwe mensen in Nederland en Vlaanderen.",
+		},
+		ImageAssets:        []string{"customers/1234567890/assets/10"},
+		YouTubeVideoAssets: []string{"customers/1234567890/assets/20"},
+		Status:             "ENABLED",
+	}
+	preview, err := runDraftAppAd(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if preview.Applied || preview.Token == "" || preview.StatusAfterApply != "ENABLED" || preview.NextActionHint != nil {
+		t.Fatalf("bad preview: %+v", preview)
+	}
+
+	args.Confirm = preview.Token
+	if _, err := runDraftAppAd(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	create := opCreate(t, cap.firstOp(t), "adGroupAdOperation")
+	if create["status"] != "ENABLED" || create["adGroup"] != "customers/1234567890/adGroups/111" {
+		t.Fatalf("unexpected create: %v", create)
+	}
+	ad := create["ad"].(map[string]any)
+	appAd := ad["appAd"].(map[string]any)
+	images := appAd["images"].([]any)
+	videos := appAd["youtubeVideos"].([]any)
+	if images[0].(map[string]any)["asset"] != "customers/1234567890/assets/10" {
+		t.Errorf("images = %v", images)
+	}
+	if videos[0].(map[string]any)["asset"] != "customers/1234567890/assets/20" {
+		t.Errorf("videos = %v", videos)
+	}
+}
+
+func TestDraftAppAd_Validation(t *testing.T) {
+	base := DraftAppAdArgs{CustomerID: "1", AdGroupID: "1", Headlines: []string{"Headline"}, Descriptions: []string{"Description"}}
+	cases := []struct {
+		name string
+		args DraftAppAdArgs
+	}{
+		{"missing ad group", DraftAppAdArgs{CustomerID: "1", Headlines: base.Headlines, Descriptions: base.Descriptions}},
+		{"no headlines", DraftAppAdArgs{CustomerID: "1", AdGroupID: "1", Descriptions: base.Descriptions}},
+		{"too many headlines", DraftAppAdArgs{CustomerID: "1", AdGroupID: "1", Headlines: headlines(6), Descriptions: base.Descriptions}},
+		{"no descriptions", DraftAppAdArgs{CustomerID: "1", AdGroupID: "1", Headlines: base.Headlines}},
+		{"too many descriptions", DraftAppAdArgs{CustomerID: "1", AdGroupID: "1", Headlines: base.Headlines, Descriptions: descriptions(6)}},
+		{"empty image asset", DraftAppAdArgs{CustomerID: "1", AdGroupID: "1", Headlines: base.Headlines, Descriptions: base.Descriptions, ImageAssets: []string{""}}},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if _, err := runDraftAppAd(t.Context(), nil, testCase.args); err == nil {
+				t.Fatal("expected validation error")
+			}
+		})
+	}
+}

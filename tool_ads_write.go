@@ -85,6 +85,93 @@ func runDraftResponsiveSearchAd(ctx context.Context, c *Client, args DraftRsaArg
 	return res.withCreateStatus(status, enableAdHint(args.AdGroupID, "<resolve ad_id from apply response>")), nil
 }
 
+// DraftAppAdArgs drafts an App campaign ad. App ads are immutable after
+// creation, so copy or asset changes are made by creating a replacement ad.
+type DraftAppAdArgs struct {
+	CustomerID         string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the ad group"`
+	AdGroupID          string   `json:"ad_group_id" jsonschema:"the App campaign ad group ID to create the replacement ad in"`
+	Headlines          []string `json:"headlines" jsonschema:"1-5 headlines, each at most 30 characters"`
+	Descriptions       []string `json:"descriptions" jsonschema:"1-5 descriptions, each at most 90 characters"`
+	ImageAssets        []string `json:"image_assets,omitempty" jsonschema:"Google Ads image asset resource names"`
+	YouTubeVideoAssets []string `json:"youtube_video_assets,omitempty" jsonschema:"Google Ads YouTube video asset resource names"`
+	Status             string   `json:"status,omitempty" jsonschema:"ENABLED, PAUSED, or REMOVED; defaults to PAUSED"`
+	Confirm            string   `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
+}
+
+func runDraftAppAd(ctx context.Context, c *Client, args DraftAppAdArgs) (WriteResult, error) {
+	const tool = "draft_app_ad"
+	if err := checkBlockedOperation(tool, loadSafetyConfig()); err != nil {
+		return WriteResult{}, toolError(tool, err)
+	}
+	if args.AdGroupID == "" {
+		return WriteResult{}, fmt.Errorf("ad_group_id is required")
+	}
+	if len(args.Headlines) < 1 || len(args.Headlines) > 5 {
+		return WriteResult{}, fmt.Errorf("app ad requires 1-5 headlines, got %d", len(args.Headlines))
+	}
+	if len(args.Descriptions) < 1 || len(args.Descriptions) > 5 {
+		return WriteResult{}, fmt.Errorf("app ad requires 1-5 descriptions, got %d", len(args.Descriptions))
+	}
+	if len(args.ImageAssets) > 20 {
+		return WriteResult{}, fmt.Errorf("app ad accepts at most 20 image assets, got %d", len(args.ImageAssets))
+	}
+	if len(args.YouTubeVideoAssets) > 20 {
+		return WriteResult{}, fmt.Errorf("app ad accepts at most 20 YouTube video assets, got %d", len(args.YouTubeVideoAssets))
+	}
+	for _, headline := range args.Headlines {
+		if err := validateHeadline(headline); err != nil {
+			return WriteResult{}, err
+		}
+	}
+	for _, description := range args.Descriptions {
+		if err := validateDescription(description); err != nil {
+			return WriteResult{}, err
+		}
+	}
+	for _, resourceName := range append(append([]string{}, args.ImageAssets...), args.YouTubeVideoAssets...) {
+		if resourceName == "" {
+			return WriteResult{}, fmt.Errorf("asset resource names cannot be empty")
+		}
+	}
+	status, err := parseAdStatus(args.Status)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	if args.Confirm != "" {
+		return applyConfirmed(ctx, c, tool, args.Confirm)
+	}
+
+	appAd := map[string]any{
+		"headlines":    textAssets(args.Headlines),
+		"descriptions": textAssets(args.Descriptions),
+	}
+	if len(args.ImageAssets) > 0 {
+		appAd["images"] = assetRefs(args.ImageAssets)
+	}
+	if len(args.YouTubeVideoAssets) > 0 {
+		appAd["youtubeVideos"] = assetRefs(args.YouTubeVideoAssets)
+	}
+	cid := normalizeCustomerID(args.CustomerID)
+	op := map[string]any{
+		"adGroupAdOperation": map[string]any{
+			"create": map[string]any{
+				"adGroup": fmt.Sprintf("customers/%s/adGroups/%s", cid, args.AdGroupID),
+				"ad":      map[string]any{"appAd": appAd},
+				"status":  string(status),
+			},
+		},
+	}
+	summary := fmt.Sprintf(
+		"Draft App ad in ad group %s (%d headlines, %d descriptions, %d images, %d videos, status %s)",
+		args.AdGroupID, len(args.Headlines), len(args.Descriptions), len(args.ImageAssets), len(args.YouTubeVideoAssets), status,
+	)
+	result, err := previewMutate(tool, cid, summary, []any{op})
+	if err != nil {
+		return WriteResult{}, err
+	}
+	return result.withCreateStatus(status, enableAdHint(args.AdGroupID, "<resolve ad_id from apply response>")), nil
+}
+
 // textAssets wraps each string as a {"text": …} asset object.
 func textAssets(texts []string) []any {
 	out := make([]any, len(texts))
@@ -94,9 +181,20 @@ func textAssets(texts []string) []any {
 	return out
 }
 
+func assetRefs(resourceNames []string) []any {
+	out := make([]any, len(resourceNames))
+	for i, resourceName := range resourceNames {
+		out[i] = map[string]any{"asset": resourceName}
+	}
+	return out
+}
+
 // --- CLI front-end ---
 
-var draftRsaArgs DraftRsaArgs
+var (
+	draftRsaArgs   DraftRsaArgs
+	draftAppAdArgs DraftAppAdArgs
+)
 
 var adCmd = &cobra.Command{
 	Use:   "ad",
@@ -120,6 +218,23 @@ var adDraftRsaCmd = &cobra.Command{
 	},
 }
 
+var adDraftAppCmd = &cobra.Command{
+	Use:   "draft-app",
+	Short: "Draft an App campaign ad (previews first; --confirm to apply)",
+	Args:  cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		client, err := newClient(cmd.Context())
+		if err != nil {
+			return err
+		}
+		result, err := runDraftAppAd(cmd.Context(), client, draftAppAdArgs)
+		if err != nil {
+			return err
+		}
+		return printJSON(cmd.OutOrStdout(), result)
+	},
+}
+
 func init() {
 	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
 	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.AdGroupID, "ad-group-id", "", "ad group ID (required)")
@@ -134,5 +249,16 @@ func init() {
 	_ = adDraftRsaCmd.MarkFlagRequired("ad-group-id")
 	_ = adDraftRsaCmd.MarkFlagRequired("final-url")
 
-	adCmd.AddCommand(adDraftRsaCmd)
+	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.AdGroupID, "ad-group-id", "", "App campaign ad group ID (required)")
+	adDraftAppCmd.Flags().StringArrayVar(&draftAppAdArgs.Headlines, "headline", nil, "headline (repeatable, 1-5)")
+	adDraftAppCmd.Flags().StringArrayVar(&draftAppAdArgs.Descriptions, "description", nil, "description (repeatable, 1-5)")
+	adDraftAppCmd.Flags().StringArrayVar(&draftAppAdArgs.ImageAssets, "image-asset", nil, "Google Ads image asset resource name (repeatable)")
+	adDraftAppCmd.Flags().StringArrayVar(&draftAppAdArgs.YouTubeVideoAssets, "youtube-video-asset", nil, "Google Ads YouTube video asset resource name (repeatable)")
+	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.Status, "status", "", "ENABLED, PAUSED (default), or REMOVED")
+	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.Confirm, "confirm", "", "confirm token from a previous preview")
+	_ = adDraftAppCmd.MarkFlagRequired("customer-id")
+	_ = adDraftAppCmd.MarkFlagRequired("ad-group-id")
+
+	adCmd.AddCommand(adDraftRsaCmd, adDraftAppCmd)
 }

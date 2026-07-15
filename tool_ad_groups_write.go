@@ -18,6 +18,7 @@ type CreateAdGroupArgs struct {
 	CampaignID   string `json:"campaign_id" jsonschema:"the campaign ID the ad group belongs to"`
 	Name         string `json:"name" jsonschema:"the ad group name"`
 	CpcBidMicros int64  `json:"cpc_bid_micros,omitempty" jsonschema:"optional default CPC bid in micros"`
+	OmitType     bool   `json:"omit_type,omitempty" jsonschema:"omit the ad group type; required for App campaigns"`
 	Status       string `json:"status,omitempty" jsonschema:"ENABLED, PAUSED, or REMOVED; defaults to PAUSED"`
 	Confirm      string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
@@ -42,7 +43,9 @@ func runCreateAdGroup(ctx context.Context, c *Client, args CreateAdGroupArgs) (W
 		"campaign": fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID),
 		"name":     args.Name,
 		"status":   string(status),
-		"type":     "SEARCH_STANDARD",
+	}
+	if !args.OmitType {
+		create["type"] = "SEARCH_STANDARD"
 	}
 	if args.CpcBidMicros != 0 {
 		create["cpcBidMicros"] = microsString(args.CpcBidMicros)
@@ -153,6 +156,7 @@ func init() {
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.Name, "name", "", "ad group name (required)")
 	adGroupCreateCmd.Flags().Int64Var(&createAdGroupArgs.CpcBidMicros, "cpc-bid-micros", 0, "default CPC bid in micros")
+	adGroupCreateCmd.Flags().BoolVar(&createAdGroupArgs.OmitType, "omit-type", false, "omit ad group type (required for App campaigns)")
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.Status, "status", "", "ENABLED, PAUSED (default), or REMOVED")
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.Confirm, "confirm", "", "confirm token from a previous preview")
 	_ = adGroupCreateCmd.MarkFlagRequired("customer-id")

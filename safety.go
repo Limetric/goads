@@ -31,6 +31,7 @@ const (
 	dispatchMutate                = ""
 	dispatchApplyRecommendation   = "apply_recommendation"
 	dispatchDismissRecommendation = "dismiss_recommendation"
+	dispatchYouTubeVideoUpload    = "youtube_video_upload"
 )
 
 // PendingMutation is what a write tool stages for confirmation.
@@ -113,17 +114,59 @@ func consumeMutation(token string) (*PendingMutation, error) {
 
 // applyPending executes a consumed pending write via the endpoint selected by
 // its Dispatch: the dedicated recommendation RPCs, or the default mutate path.
-func applyPending(ctx context.Context, c *Client, p *PendingMutation) error {
+type applyOutcome struct {
+	Results []json.RawMessage
+}
+
+func applyPending(ctx context.Context, c *Client, p *PendingMutation) (*applyOutcome, error) {
 	switch p.Dispatch {
 	case dispatchApplyRecommendation:
-		_, err := c.ApplyRecommendations(ctx, p.CustomerID, p.ResourceNames)
-		return err
+		response, err := c.ApplyRecommendations(ctx, p.CustomerID, p.ResourceNames)
+		if err != nil {
+			return nil, err
+		}
+		if err := partialFailureError(response.PartialErrors); err != nil {
+			return nil, err
+		}
+		return &applyOutcome{Results: response.Results}, nil
 	case dispatchDismissRecommendation:
-		_, err := c.DismissRecommendations(ctx, p.CustomerID, p.ResourceNames)
-		return err
+		response, err := c.DismissRecommendations(ctx, p.CustomerID, p.ResourceNames)
+		if err != nil {
+			return nil, err
+		}
+		if err := partialFailureError(response.PartialErrors); err != nil {
+			return nil, err
+		}
+		return &applyOutcome{Results: response.Results}, nil
+	case dispatchYouTubeVideoUpload:
+		if len(p.Operations) != 1 {
+			return nil, fmt.Errorf("YouTube video upload confirmation has %d operations; expected 1", len(p.Operations))
+		}
+		operation, ok := p.Operations[0].(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("YouTube video upload confirmation is corrupt")
+		}
+		filePath, _ := operation["file_path"].(string)
+		title, _ := operation["title"].(string)
+		description, _ := operation["description"].(string)
+		response, err := c.UploadYouTubeVideo(ctx, p.CustomerID, filePath, title, description)
+		if err != nil {
+			return nil, err
+		}
+		result, err := json.Marshal(map[string]any{"resourceName": response.ResourceName})
+		if err != nil {
+			return nil, err
+		}
+		return &applyOutcome{Results: []json.RawMessage{result}}, nil
 	default:
-		_, err := c.Mutate(ctx, p.CustomerID, p.Operations)
-		return err
+		response, err := c.Mutate(ctx, p.CustomerID, p.Operations)
+		if err != nil {
+			return nil, err
+		}
+		if err := partialFailureError(response.PartialErrors); err != nil {
+			return nil, err
+		}
+		return &applyOutcome{Results: response.operationResults()}, nil
 	}
 }
 

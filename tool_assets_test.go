@@ -57,6 +57,32 @@ func TestUploadTextAsset_PreviewThenApply(t *testing.T) {
 	}
 }
 
+func TestUploadYouTubeVideoAsset_PreviewThenApply(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := AssetYouTubeVideoArgs{CustomerID: "123-456-7890", AssetName: "CMV portrait", YouTubeVideoID: "abc123"}
+	prev, err := runUploadYouTubeVideoAsset(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	if prev.Applied || prev.Token == "" || cap.calls != 0 {
+		t.Fatalf("bad preview: %+v calls=%d", prev, cap.calls)
+	}
+
+	args.Confirm = prev.Token
+	if _, err := runUploadYouTubeVideoAsset(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	create := opCreate(t, cap.firstOp(t), "assetOperation")
+	video, _ := create["youtubeVideoAsset"].(map[string]any)
+	if create["name"] != "CMV portrait" || video["youtubeVideoId"] != "abc123" {
+		t.Errorf("unexpected YouTube asset op: %v", create)
+	}
+}
+
 func TestUploadAsset_Validation(t *testing.T) {
 	if _, err := runUploadImageAsset(t.Context(), nil, AssetImageArgs{CustomerID: "1", ImageDataBase64: "x"}); err == nil {
 		t.Error("empty asset name should error")
@@ -66,6 +92,9 @@ func TestUploadAsset_Validation(t *testing.T) {
 	}
 	if _, err := runUploadTextAsset(t.Context(), nil, AssetTextArgs{CustomerID: "1", AssetName: "N"}); err == nil {
 		t.Error("empty text content should error")
+	}
+	if _, err := runUploadYouTubeVideoAsset(t.Context(), nil, AssetYouTubeVideoArgs{CustomerID: "1", AssetName: "N"}); err == nil {
+		t.Error("empty YouTube video ID should error")
 	}
 }
 
