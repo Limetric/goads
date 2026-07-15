@@ -1,0 +1,4 @@
+{
+	"setup": ["codegraph init -i"],
+	"teardown": []
+}
