@@ -215,6 +215,10 @@ func registerTools(server *mcp.Server, client *Client) {
 		"Create a Performance Max campaign as one atomic batch (defaults to PAUSED). Returns a preview + confirm token; pass Confirm to apply.",
 		runCreatePmaxCampaign)
 
+	addTool(server, client, "create_app_campaign",
+		"Create a Google Play App campaign for installs as one atomic batch (defaults to PAUSED). Returns a preview + confirm token; pass Confirm to apply.",
+		runCreateAppCampaign)
+
 	addTool(server, client, "draft_campaign",
 		"Draft a new campaign with budget, ad group, and optional keywords (defaults to PAUSED). Returns a preview + confirm token; pass Confirm to apply.",
 		runDraftCampaign)

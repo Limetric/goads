@@ -64,15 +64,15 @@ func TestMCP_RegistrationIntegrity(t *testing.T) {
 		"list_recommendations", "set_campaign_budget", "draft_campaign", "update_campaign",
 		"create_ad_group", "draft_responsive_search_ad", "draft_keywords",
 		"create_portfolio_bidding_strategy", "create_custom_audience", "upload_image_asset",
-		"set_campaign_schedule", "create_pmax_campaign", "pause_entity", "enable_entity",
+		"set_campaign_schedule", "create_pmax_campaign", "create_app_campaign", "pause_entity", "enable_entity",
 		"remove_entity", "apply_recommendation", "dismiss_recommendation",
 	} {
 		if !names[want] {
 			t.Errorf("MCP tool %q is not registered", want)
 		}
 	}
-	if len(names) != 46 {
-		t.Errorf("expected 46 registered MCP tools, got %d (update this count when adding/removing a tool)", len(names))
+	if len(names) != 47 {
+		t.Errorf("expected 47 registered MCP tools, got %d (update this count when adding/removing a tool)", len(names))
 	}
 }
 
