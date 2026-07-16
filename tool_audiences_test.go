@@ -1,40 +1,31 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-func TestCreateCustomAudience_Preview(t *testing.T) {
-	useTempState(t)
-	// customAudienceOperation is not an allowed mutate key, so this test only
-	// exercises the preview path.
-	prev, err := runCreateCustomAudience(t.Context(), nil, CreateAudienceArgs{
-		CustomerID: "123-456-7890", AudienceName: "My Audience", AudienceType: "WEBSITE_VISITORS",
-		URLsOrRules: []string{"example.com/products"},
-	})
-	if err != nil {
-		t.Fatalf("preview: %v", err)
-	}
-	if prev.Applied || prev.Token == "" {
-		t.Errorf("expected preview with token, got %+v", prev)
-	}
-}
-
-func TestCreateCustomAudience_ApplyGatedByAllowList(t *testing.T) {
+func TestCreateCustomAudience_ErrorsInsteadOfDeadToken(t *testing.T) {
 	useTempState(t)
 	srv, cap := mutateServer(t)
 	defer srv.Close()
 	c := newTestClient(t, srv)
-	prev, _ := runCreateCustomAudience(t.Context(), c, CreateAudienceArgs{
-		CustomerID: "1", AudienceName: "A", AudienceType: "WEBSITE_VISITORS", URLsOrRules: []string{"x"},
+	// v23 custom audiences need the dedicated customAudiences:mutate service;
+	// the tool used to hand out a confirm token that could never be applied
+	// (issue #9). It must now fail at preview time with guidance, issue no
+	// token, and never reach the API.
+	res, err := runCreateCustomAudience(t.Context(), c, CreateAudienceArgs{
+		CustomerID: "123-456-7890", AudienceName: "My Audience", AudienceType: "WEBSITE_VISITORS",
+		URLsOrRules: []string{"example.com/products"},
 	})
-	// Applying must be rejected client-side (customAudienceOperation is not a
-	// valid googleAds:mutate key) and never reach the server.
-	if _, err := runCreateCustomAudience(t.Context(), c, CreateAudienceArgs{
-		CustomerID: "1", AudienceName: "A", AudienceType: "WEBSITE_VISITORS", URLsOrRules: []string{"x"}, Confirm: prev.Token,
-	}); err == nil {
-		t.Fatal("expected allow-list to reject customAudienceOperation on apply")
+	if err == nil || !strings.Contains(err.Error(), "customAudiences:mutate") {
+		t.Fatalf("expected a not-supported error with guidance, got result=%+v err=%v", res, err)
+	}
+	if res.Token != "" {
+		t.Errorf("no confirm token may be issued: %+v", res)
 	}
 	if cap.calls != 0 {
-		t.Errorf("server should not be called for a disallowed op")
+		t.Errorf("server should never be called")
 	}
 }
 

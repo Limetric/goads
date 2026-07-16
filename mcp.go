@@ -160,7 +160,7 @@ func registerTools(server *mcp.Server, client *Client) {
 		runUpdateKeywordBid)
 
 	addTool(server, client, "create_custom_audience",
-		"Create a custom audience from URL patterns or rules. Returns a preview + confirm token; pass Confirm to apply.",
+		"NOT SUPPORTED YET: custom audiences need the dedicated customAudiences:mutate service (v23). This tool always errors with guidance; create the audience in the Google Ads UI and attach it with add_audience_targeting.",
 		runCreateCustomAudience)
 
 	addTool(server, client, "add_audience_targeting",

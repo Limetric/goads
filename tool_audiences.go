@@ -17,9 +17,10 @@ var (
 
 // CreateAudienceArgs creates a custom audience from URL patterns or rules.
 //
-// Note: customAudienceOperation is not a googleAds:mutate key in v23 (custom
-// audiences have a dedicated service), so applying this is intentionally gated
-// by the mutate allow-list. The preview is still useful for review.
+// Note: custom audiences are not a googleAds:mutate operation in v23 — they
+// live on the dedicated customAudiences:mutate service, which this tool does
+// not call yet. It errors at preview time instead of issuing a confirm token
+// that could never be applied (issue #9).
 type CreateAudienceArgs struct {
 	CustomerID   string   `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the audience"`
 	AudienceName string   `json:"audience_name" jsonschema:"a name for the custom audience"`
@@ -42,24 +43,11 @@ func runCreateCustomAudience(ctx context.Context, c *Client, args CreateAudience
 	if len(args.URLsOrRules) == 0 {
 		return WriteResult{}, fmt.Errorf("at least one URL pattern or rule is required")
 	}
-	if args.Confirm != "" {
-		return applyConfirmed(ctx, c, tool, args.Confirm)
-	}
-	members := make([]any, len(args.URLsOrRules))
-	for i, rule := range args.URLsOrRules {
-		members[i] = map[string]any{"keyword": map[string]any{"value": rule}}
-	}
-	op := map[string]any{
-		"customAudienceOperation": map[string]any{
-			"create": map[string]any{
-				"name":    args.AudienceName,
-				"type":    args.AudienceType,
-				"members": members,
-			},
-		},
-	}
-	summary := fmt.Sprintf("Create %s custom audience %q with %d rule(s)", args.AudienceType, args.AudienceName, len(args.URLsOrRules))
-	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, []any{op})
+	// No preview token is issued: custom audiences need the dedicated
+	// customAudiences:mutate service (not googleAds:mutate), so a staged
+	// operation could never pass the mutate allow-list at confirm time.
+	// Failing here is honest; handing out a dead token is not (issue #9).
+	return WriteResult{}, fmt.Errorf("create_custom_audience is not supported yet: custom audiences use the dedicated customAudiences:mutate service in v23, which goads does not call. Create the audience in the Google Ads UI, then attach it with add_audience_targeting")
 }
 
 // AddAudienceTargetingArgs attaches an audience to a campaign in TARGETING or
