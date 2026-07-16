@@ -92,7 +92,6 @@ func TestApplyBiddingStrategyUpdate(t *testing.T) {
 		{"manual cpc", "MANUAL_CPC", 0, 0, "manualCpc", map[string]any{}},
 		{"target spend", "TARGET_SPEND", 0, 0, "targetSpend", map[string]any{}},
 		{"maximize clicks maps to target spend", "MAXIMIZE_CLICKS", 0, 0, "targetSpend", map[string]any{}},
-		{"target impression share", "TARGET_IMPRESSION_SHARE", 0, 0, "targetImpressionShare", map[string]any{}},
 		{"percent cpc", "PERCENT_CPC", 0, 0, "percentCpc", map[string]any{}},
 	}
 	for _, tc := range cases {
@@ -129,6 +128,16 @@ func TestApplyBiddingStrategyUpdate(t *testing.T) {
 			if err := applyBiddingStrategyUpdate(campaign, &mask, strategy, 0, 0); err == nil {
 				t.Errorf("%s with zero value should error", strategy)
 			}
+		}
+	})
+
+	t.Run("target impression share errors with guidance", func(t *testing.T) {
+		// An empty targetImpressionShare object is rejected by v23 at confirm
+		// time (it requires location/fraction parameters).
+		campaign := map[string]any{}
+		var mask []string
+		if err := applyBiddingStrategyUpdate(campaign, &mask, "TARGET_IMPRESSION_SHARE", 0, 0); err == nil || !strings.Contains(err.Error(), "create_portfolio_bidding_strategy") {
+			t.Fatalf("expected guidance error, got %v", err)
 		}
 	})
 

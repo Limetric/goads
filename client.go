@@ -46,8 +46,10 @@ func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
 		http: &http.Client{Timeout: 60 * time.Second},
 		// Media uploads stream arbitrarily large bodies; http.Client.Timeout
 		// covers the entire transfer, so a 60s cap would abort any upload
-		// slower than that. Uploads are bounded by the request context instead.
-		upload: &http.Client{},
+		// slower than that. Instead the response-header wait is bounded (a
+		// server that never answers can't hang the CLI forever) and the
+		// transfer itself is bounded by the request context.
+		upload: &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 60 * time.Second}},
 		tokens: newTokenSource(ctx, cfg),
 	}, nil
 }

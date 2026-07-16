@@ -53,13 +53,15 @@ func applyBiddingStrategyUpdate(campaign map[string]any, mask *[]string, strateg
 		campaign["targetSpend"] = map[string]any{}
 		*mask = append(*mask, "targetSpend")
 	case "TARGET_IMPRESSION_SHARE":
-		campaign["targetImpressionShare"] = map[string]any{}
-		*mask = append(*mask, "targetImpressionShare")
+		// v23 requires location + fraction (and optionally a CPC ceiling) —
+		// an empty object previews fine and is rejected at confirm. Use
+		// create_portfolio_bidding_strategy, which stages those fields.
+		return fmt.Errorf("TARGET_IMPRESSION_SHARE cannot be set via update_campaign (it requires location/fraction/ceiling parameters) — create it with create_portfolio_bidding_strategy instead")
 	case "PERCENT_CPC":
 		campaign["percentCpc"] = map[string]any{}
 		*mask = append(*mask, "percentCpc")
 	default:
-		return fmt.Errorf("unsupported bidding strategy %q — use one of MAXIMIZE_CONVERSIONS, MAXIMIZE_CONVERSION_VALUE, TARGET_CPA, TARGET_ROAS, MANUAL_CPC, TARGET_SPEND/MAXIMIZE_CLICKS, TARGET_IMPRESSION_SHARE, PERCENT_CPC", strategy)
+		return fmt.Errorf("unsupported bidding strategy %q — use one of MAXIMIZE_CONVERSIONS, MAXIMIZE_CONVERSION_VALUE, TARGET_CPA, TARGET_ROAS, MANUAL_CPC, TARGET_SPEND/MAXIMIZE_CLICKS, PERCENT_CPC", strategy)
 	}
 	return nil
 }
@@ -102,11 +104,13 @@ type UpdateCampaignArgs struct {
 
 func runUpdateCampaign(ctx context.Context, c *Client, args UpdateCampaignArgs) (WriteResult, error) {
 	const tool = "update_campaign"
-	if args.Confirm != "" {
-		return applyConfirmed(ctx, c, tool, args.Confirm)
-	}
+	// Blocked-op check runs before the confirm branch so an operation blocked
+	// between preview and confirm cannot still be applied with its token.
 	if err := checkBlockedOperation(tool, loadSafetyConfig()); err != nil {
 		return WriteResult{}, toolError(tool, err)
+	}
+	if args.Confirm != "" {
+		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
 	if cid == "" {

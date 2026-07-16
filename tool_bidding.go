@@ -95,16 +95,16 @@ func runUpdateKeywordBid(ctx context.Context, c *Client, args UpdateKeywordBidAr
 	if err != nil {
 		return WriteResult{}, err
 	}
-	// The bid-increase guard needs a trustworthy baseline. A caller-supplied
-	// current_bid of 0 used to mean "no baseline, always allowed", so simply
-	// omitting it bypassed the guard — fetch the real bid instead (issue #12).
-	baseline := args.CurrentBid
+	// The bid-increase guard needs a trustworthy baseline, so the real bid is
+	// always fetched from the API — a caller-supplied current_bid (omitted or
+	// inflated) used to bypass the guard entirely (issue #12). The supplied
+	// value is only a fallback for keywords with no explicit bid yet.
+	baseline, err := fetchCurrentKeywordBid(ctx, c, cid, adGroupID, criterionID)
+	if err != nil {
+		return WriteResult{}, toolError(tool, fmt.Errorf("could not verify the current bid for the bid-increase guard: %w", err))
+	}
 	if baseline <= 0 {
-		fetched, err := fetchCurrentKeywordBid(ctx, c, cid, adGroupID, criterionID)
-		if err != nil {
-			return WriteResult{}, toolError(tool, fmt.Errorf("could not verify the current bid for the bid-increase guard: %w — pass current_bid explicitly if the keyword has no bid yet", err))
-		}
-		baseline = fetched
+		baseline = args.CurrentBid
 	}
 	if err := checkBidIncrease(baseline, args.NewBid, cfg); err != nil {
 		return WriteResult{}, toolError(tool, err)
@@ -124,6 +124,9 @@ func runUpdateKeywordBid(ctx context.Context, c *Client, args UpdateKeywordBidAr
 // units. A result of 0 with a nil error means the keyword has no explicit bid
 // (no baseline for the guard).
 func fetchCurrentKeywordBid(ctx context.Context, c *Client, customerID, adGroupID, criterionID string) (float64, error) {
+	if c == nil {
+		return 0, nil
+	}
 	q := fmt.Sprintf("SELECT ad_group_criterion.cpc_bid_micros FROM ad_group_criterion WHERE ad_group.id = %s AND ad_group_criterion.criterion_id = %s", adGroupID, criterionID)
 	rows, err := c.Search(ctx, customerID, q)
 	if err != nil {

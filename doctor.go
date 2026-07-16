@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -86,9 +87,13 @@ func liveVerdictFor(err error) liveResult {
 		return liveFailed
 	}
 	var oauthErr *oauth2.RetrieveError
-	if errors.As(err, &oauthErr) && oauthErr.Response != nil &&
-		oauthErr.Response.StatusCode >= 400 && oauthErr.Response.StatusCode < 500 {
-		return liveFailed
+	if errors.As(err, &oauthErr) && oauthErr.Response != nil {
+		switch oauthErr.Response.StatusCode {
+		// Definitive credential failures. 429/5xx from the token endpoint
+		// stay inconclusive — rate limiting is not a broken setup.
+		case http.StatusBadRequest, http.StatusUnauthorized, http.StatusForbidden:
+			return liveFailed
+		}
 	}
 	return liveInconclusive
 }

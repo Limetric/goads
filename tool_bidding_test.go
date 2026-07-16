@@ -116,6 +116,13 @@ func TestUpdateKeywordBid_FetchesBaselineWhenOmitted(t *testing.T) {
 	if _, err := runUpdateKeywordBid(t.Context(), c, args); err != nil {
 		t.Fatalf("50%% increase should pass: %v", err)
 	}
+
+	// An inflated caller-supplied current_bid must not beat the fetched
+	// baseline: real bid is $1.00, claiming $10 doesn't make $5 a 0% change.
+	args.CurrentBid, args.NewBid = 10, 5
+	if _, err := runUpdateKeywordBid(t.Context(), c, args); err == nil {
+		t.Fatal("fetched baseline should override the caller-supplied current_bid")
+	}
 }
 
 func TestUpdateKeywordBid_RejectsNonNumericIDs(t *testing.T) {

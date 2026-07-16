@@ -107,6 +107,9 @@ func runCreatePmaxCampaign(ctx context.Context, c *Client, args CreatePmaxArgs) 
 	}
 	switch args.BiddingStrategy {
 	case "MAXIMIZE_CONVERSION_VALUE":
+		if args.TargetROAS < 0 {
+			return WriteResult{}, fmt.Errorf("target_roas must be positive (a ratio, e.g. 3.5), got %v", args.TargetROAS)
+		}
 		mcv := map[string]any{}
 		if args.TargetROAS > 0 {
 			mcv["targetRoas"] = args.TargetROAS

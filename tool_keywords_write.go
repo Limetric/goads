@@ -62,10 +62,15 @@ func runDraftKeywords(ctx context.Context, c *Client, args DraftKeywordsArgs) (W
 		return WriteResult{}, err
 	}
 	// Guard: BROAD match keywords into a MANUAL_CPC campaign burn budget. The
-	// campaign's strategy is looked up from the ad group; when it cannot be
-	// determined the guard does not block (issue #12).
+	// campaign's strategy is looked up from the ad group; a lookup failure is
+	// an error (fail closed), while an ad group with no resolvable strategy
+	// does not block (issue #12).
 	if hasBroad {
-		if strategy := campaignBiddingStrategyForAdGroup(ctx, c, cid, adGroupID); strategy != "" {
+		strategy, err := campaignBiddingStrategyForAdGroup(ctx, c, cid, adGroupID)
+		if err != nil {
+			return WriteResult{}, toolError(tool, fmt.Errorf("could not verify the campaign's bidding strategy for the BROAD+MANUAL_CPC guard: %w", err))
+		}
+		if strategy != "" {
 			if err := checkBroadManualCPC("BROAD", strategy); err != nil {
 				return WriteResult{}, toolError(tool, err)
 			}
@@ -88,16 +93,20 @@ func runDraftKeywords(ctx context.Context, c *Client, args DraftKeywordsArgs) (W
 }
 
 // campaignBiddingStrategyForAdGroup looks up the bidding strategy type of the
-// campaign that owns an ad group. Best-effort: returns "" when it cannot be
-// determined (the guard then does not block).
-func campaignBiddingStrategyForAdGroup(ctx context.Context, c *Client, customerID, adGroupID string) string {
+// campaign that owns an ad group. A query failure is returned as an error so
+// the guard can fail closed; "" with a nil error means the strategy could not
+// be resolved from the response (no rows / unexpected shape).
+func campaignBiddingStrategyForAdGroup(ctx context.Context, c *Client, customerID, adGroupID string) (string, error) {
 	if c == nil {
-		return ""
+		return "", nil
 	}
 	q := fmt.Sprintf("SELECT campaign.bidding_strategy_type FROM ad_group WHERE ad_group.id = %s", adGroupID)
 	rows, err := c.Search(ctx, customerID, q)
-	if err != nil || len(rows) == 0 {
-		return ""
+	if err != nil {
+		return "", err
+	}
+	if len(rows) == 0 {
+		return "", nil
 	}
 	var row struct {
 		Campaign struct {
@@ -105,9 +114,9 @@ func campaignBiddingStrategyForAdGroup(ctx context.Context, c *Client, customerI
 		} `json:"campaign"`
 	}
 	if json.Unmarshal(rows[0], &row) != nil {
-		return ""
+		return "", nil
 	}
-	return row.Campaign.BiddingStrategyType
+	return row.Campaign.BiddingStrategyType, nil
 }
 
 // AddNegativeKeywordsArgs adds campaign-level negative keywords.

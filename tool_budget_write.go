@@ -39,12 +39,14 @@ func runBudgetSet(ctx context.Context, c *Client, args BudgetSetArgs) (WriteResu
 	if args.CustomerID == "" || args.BudgetID == "" {
 		return WriteResult{}, fmt.Errorf("customer_id and budget_id are required")
 	}
-	if args.Confirm != "" {
-		return applyConfirmed(ctx, c, tool, args.Confirm)
-	}
+	// Blocked-op check runs before the confirm branch so an operation blocked
+	// between preview and confirm cannot still be applied with its token.
 	cfg := loadSafetyConfig()
 	if err := checkBlockedOperation(tool, cfg); err != nil {
 		return WriteResult{}, toolError(tool, err)
+	}
+	if args.Confirm != "" {
+		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	if args.AmountMicros <= 0 {
 		return WriteResult{}, fmt.Errorf("amount_micros must be positive (1 unit of currency = 1,000,000 micros)")
