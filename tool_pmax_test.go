@@ -94,3 +94,50 @@ func TestCreatePmax_Blocked(t *testing.T) {
 		t.Fatal("expected blocked-operation error")
 	}
 }
+
+func TestCreatePmax_TargetCPAIsHonored(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := validPmaxArgs()
+	args.BiddingStrategy = "TARGET_CPA"
+	// Without target_cpa it must error instead of silently downgrading to
+	// plain maximizeConversions (issue #14).
+	if _, err := runCreatePmaxCampaign(t.Context(), c, args); err == nil {
+		t.Fatal("TARGET_CPA without target_cpa should error")
+	}
+	args.TargetCPA = 12.5
+	prev, err := runCreatePmaxCampaign(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	args.Confirm = prev.Token
+	if _, err := runCreatePmaxCampaign(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	for _, op := range cap.lastOps() {
+		m, _ := op.(map[string]any)
+		inner, ok := m["campaignOperation"].(map[string]any)
+		if !ok {
+			continue
+		}
+		create, _ := inner["create"].(map[string]any)
+		mc, _ := create["maximizeConversions"].(map[string]any)
+		if mc == nil || mc["targetCpaMicros"] != "12500000" {
+			t.Fatalf("expected maximizeConversions.targetCpaMicros=12500000, got %v", create)
+		}
+		return
+	}
+	t.Fatal("no campaignOperation staged")
+}
+
+func TestCreatePmax_UnknownStrategyErrors(t *testing.T) {
+	useTempState(t)
+	args := validPmaxArgs()
+	args.BiddingStrategy = "SUPER_BIDDING"
+	if _, err := runCreatePmaxCampaign(t.Context(), nil, args); err == nil {
+		t.Fatal("unknown PMax strategy should error")
+	}
+}

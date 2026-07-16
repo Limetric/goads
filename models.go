@@ -39,6 +39,19 @@ func parseAdStatus(s string) (AdStatus, error) {
 	}
 }
 
+// parseCreateStatus is parseAdStatus for create tools: an entity can never be
+// created in REMOVED status (issue #14).
+func parseCreateStatus(s string) (AdStatus, error) {
+	status, err := parseAdStatus(s)
+	if err != nil {
+		return "", err
+	}
+	if status == AdStatusRemoved {
+		return "", fmt.Errorf("cannot create an entity in REMOVED status — use ENABLED or PAUSED")
+	}
+	return status, nil
+}
+
 // AdRotationMode is the ad rotation mode for an ad group.
 type AdRotationMode string
 

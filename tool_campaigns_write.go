@@ -71,17 +71,34 @@ type DraftCampaignArgs struct {
 	Keywords        []KeywordWithMatchType `json:"keywords,omitempty" jsonschema:"optional keywords to add to the ad group"`
 	GeoTargetIDs    []string               `json:"geo_target_ids,omitempty" jsonschema:"optional geo target constant IDs"`
 	LanguageIDs     []string               `json:"language_ids,omitempty" jsonschema:"optional language constant IDs"`
-	Status          string                 `json:"status,omitempty" jsonschema:"ENABLED, PAUSED, or REMOVED; defaults to PAUSED"`
+	Status          string                 `json:"status,omitempty" jsonschema:"ENABLED or PAUSED; defaults to PAUSED"`
 	Confirm         string                 `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
 
 func runDraftCampaign(ctx context.Context, c *Client, args DraftCampaignArgs) (WriteResult, error) {
 	const tool = "draft_campaign"
 	cfg := loadSafetyConfig()
-	if err := checkBudgetCap(args.DailyBudget, cfg); err != nil {
+	if err := checkBlockedOperation(tool, cfg); err != nil {
 		return WriteResult{}, toolError(tool, err)
 	}
-	if err := checkBlockedOperation(tool, cfg); err != nil {
+	// MCP callers bypass the CLI's required-flag checks, so the handler
+	// validates required fields itself: empty values used to stage malformed
+	// resource names that failed only at confirm time (issue #14).
+	if args.Confirm == "" {
+		if normalizeCustomerID(args.CustomerID) == "" {
+			return WriteResult{}, fmt.Errorf("customer_id is required")
+		}
+		if args.CampaignName == "" {
+			return WriteResult{}, fmt.Errorf("campaign_name is required")
+		}
+		if args.AdGroupName == "" {
+			return WriteResult{}, fmt.Errorf("ad_group_name is required")
+		}
+		if args.DailyBudget <= 0 {
+			return WriteResult{}, fmt.Errorf("daily_budget must be positive (currency units)")
+		}
+	}
+	if err := checkBudgetCap(args.DailyBudget, cfg); err != nil {
 		return WriteResult{}, toolError(tool, err)
 	}
 	for _, kw := range args.Keywords {
@@ -93,7 +110,7 @@ func runDraftCampaign(ctx context.Context, c *Client, args DraftCampaignArgs) (W
 			return WriteResult{}, toolError(tool, err)
 		}
 	}
-	status, err := parseAdStatus(args.Status)
+	status, err := parseCreateStatus(args.Status)
 	if err != nil {
 		return WriteResult{}, err
 	}

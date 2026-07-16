@@ -20,7 +20,7 @@ type DraftRsaArgs struct {
 	FinalURL     string   `json:"final_url" jsonschema:"the landing page URL"`
 	Path1        string   `json:"path1,omitempty" jsonschema:"optional display URL path segment 1"`
 	Path2        string   `json:"path2,omitempty" jsonschema:"optional display URL path segment 2"`
-	Status       string   `json:"status,omitempty" jsonschema:"ENABLED, PAUSED, or REMOVED; defaults to PAUSED"`
+	Status       string   `json:"status,omitempty" jsonschema:"ENABLED or PAUSED; defaults to PAUSED"`
 	Confirm      string   `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
 
@@ -48,7 +48,7 @@ func runDraftResponsiveSearchAd(ctx context.Context, c *Client, args DraftRsaArg
 	if args.FinalURL == "" {
 		return WriteResult{}, fmt.Errorf("final_url is required")
 	}
-	status, err := parseAdStatus(args.Status)
+	status, err := parseCreateStatus(args.Status)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -57,6 +57,12 @@ func runDraftResponsiveSearchAd(ctx context.Context, c *Client, args DraftRsaArg
 	}
 
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
+		return WriteResult{}, err
+	}
 	rsa := map[string]any{
 		"headlines":    textAssets(args.Headlines),
 		"descriptions": textAssets(args.Descriptions),
@@ -94,7 +100,7 @@ type DraftAppAdArgs struct {
 	Descriptions       []string `json:"descriptions" jsonschema:"1-5 descriptions, each at most 90 characters"`
 	ImageAssets        []string `json:"image_assets,omitempty" jsonschema:"Google Ads image asset resource names"`
 	YouTubeVideoAssets []string `json:"youtube_video_assets,omitempty" jsonschema:"Google Ads YouTube video asset resource names"`
-	Status             string   `json:"status,omitempty" jsonschema:"ENABLED, PAUSED, or REMOVED; defaults to PAUSED"`
+	Status             string   `json:"status,omitempty" jsonschema:"ENABLED or PAUSED; defaults to PAUSED"`
 	Confirm            string   `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
 
@@ -133,7 +139,7 @@ func runDraftAppAd(ctx context.Context, c *Client, args DraftAppAdArgs) (WriteRe
 			return WriteResult{}, fmt.Errorf("asset resource names cannot be empty")
 		}
 	}
-	status, err := parseAdStatus(args.Status)
+	status, err := parseCreateStatus(args.Status)
 	if err != nil {
 		return WriteResult{}, err
 	}

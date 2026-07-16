@@ -81,3 +81,19 @@ func TestSetCampaignSchedule_Blocked(t *testing.T) {
 		t.Fatal("expected blocked-operation error")
 	}
 }
+
+func TestValidateSchedule_RejectsInvertedWindow(t *testing.T) {
+	// end <= start staged windows the API rejects at confirm time (issue #14).
+	bad := ScheduleEntry{DayOfWeek: "MONDAY", StartHour: 17, EndHour: 9}
+	if err := validateSchedule(bad); err == nil {
+		t.Fatal("inverted window should be rejected")
+	}
+	same := ScheduleEntry{DayOfWeek: "MONDAY", StartHour: 9, StartMinute: 30, EndHour: 9, EndMinute: 30}
+	if err := validateSchedule(same); err == nil {
+		t.Fatal("zero-length window should be rejected")
+	}
+	ok := ScheduleEntry{DayOfWeek: "MONDAY", StartHour: 9, EndHour: 17}
+	if err := validateSchedule(ok); err != nil {
+		t.Fatalf("valid window rejected: %v", err)
+	}
+}

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -133,11 +134,22 @@ var validSnippetHeaders = map[string]bool{
 	"Styles": true, "Types": true,
 }
 
+// sortedSnippetHeaders lists the valid headers for error messages — the old
+// hint suggested "Services", which the set rejects (issue #14).
+func sortedSnippetHeaders() []string {
+	headers := make([]string, 0, len(validSnippetHeaders))
+	for h := range validSnippetHeaders {
+		headers = append(headers, h)
+	}
+	sort.Strings(headers)
+	return headers
+}
+
 // CreateSnippetsArgs drafts a structured-snippet extension for a campaign.
 type CreateSnippetsArgs struct {
 	CustomerID string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
 	CampaignID string   `json:"campaign_id" jsonschema:"the campaign ID to attach the snippet to"`
-	Header     string   `json:"header" jsonschema:"a predefined snippet header, e.g. Brands, Services, Types"`
+	Header     string   `json:"header" jsonschema:"a predefined snippet header, e.g. Brands, Service catalog, Types"`
 	Values     []string `json:"values" jsonschema:"the snippet values"`
 	Confirm    string   `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
@@ -148,7 +160,7 @@ func runCreateStructuredSnippets(ctx context.Context, c *Client, args CreateSnip
 		return WriteResult{}, toolError(tool, err)
 	}
 	if !validSnippetHeaders[args.Header] {
-		return WriteResult{}, fmt.Errorf("invalid structured snippet header %q (e.g. Brands, Services, Types)", args.Header)
+		return WriteResult{}, fmt.Errorf("invalid structured snippet header %q — valid headers: %s", args.Header, strings.Join(sortedSnippetHeaders(), ", "))
 	}
 	if len(args.Values) == 0 {
 		return WriteResult{}, fmt.Errorf("at least one value is required for structured snippets")

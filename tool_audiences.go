@@ -72,6 +72,15 @@ func runAddAudienceTargeting(ctx context.Context, c *Client, args AddAudienceTar
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
+	if _, err := numericID("audience_id", args.AudienceID); err != nil {
+		return WriteResult{}, err
+	}
 	criterion := map[string]any{
 		"campaign": fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID),
 		"userList": map[string]any{"userList": fmt.Sprintf("customers/%s/userLists/%s", cid, args.AudienceID)},

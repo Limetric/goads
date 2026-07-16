@@ -21,21 +21,35 @@ func resetPauseCmd(t *testing.T) {
 
 func TestEntityResourceAndOp(t *testing.T) {
 	cases := []struct {
-		typ, wantRes, wantOp string
+		typ, id, wantRes, wantOp string
 	}{
-		{"campaign", "customers/1/campaigns/5", "campaignOperation"},
-		{"ad_group", "customers/1/adGroups/5", "adGroupOperation"},
-		{"ad", "customers/1/adGroupAds/5", "adGroupAdOperation"},
-		{"keyword", "customers/1/adGroupCriteria/5", "adGroupCriterionOperation"},
+		{"campaign", "5", "customers/1/campaigns/5", "campaignOperation"},
+		{"ad_group", "5", "customers/1/adGroups/5", "adGroupOperation"},
+		{"ad", "10~20", "customers/1/adGroupAds/10~20", "adGroupAdOperation"},
+		{"keyword", "10~20", "customers/1/adGroupCriteria/10~20", "adGroupCriterionOperation"},
 	}
 	for _, tc := range cases {
-		res, op, err := entityResourceAndOp("1", tc.typ, "5")
+		res, op, err := entityResourceAndOp("1", tc.typ, tc.id)
 		if err != nil || res != tc.wantRes || op != tc.wantOp {
 			t.Errorf("%s -> (%q,%q,%v), want (%q,%q)", tc.typ, res, op, err, tc.wantRes, tc.wantOp)
 		}
 	}
 	if _, _, err := entityResourceAndOp("1", "bogus", "5"); err == nil {
 		t.Error("expected error for invalid entity type")
+	}
+	// Ads and keywords need the composite adGroupId~entityId; a bare ID used
+	// to preview fine and fail only at confirm time (issue #14).
+	for _, typ := range []string{"ad", "keyword"} {
+		if _, _, err := entityResourceAndOp("1", typ, "5"); err == nil {
+			t.Errorf("bare ID for %s should be rejected", typ)
+		}
+		if _, _, err := entityResourceAndOp("1", typ, "10~x"); err == nil {
+			t.Errorf("non-numeric composite for %s should be rejected", typ)
+		}
+	}
+	// Campaigns and ad groups take plain numeric IDs only.
+	if _, _, err := entityResourceAndOp("1", "campaign", "5 OR 1=1"); err == nil {
+		t.Error("non-numeric campaign ID should be rejected")
 	}
 }
 

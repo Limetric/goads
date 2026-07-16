@@ -19,6 +19,8 @@ type CreatePmaxArgs struct {
 	CampaignName    string   `json:"campaign_name" jsonschema:"the campaign name"`
 	DailyBudget     float64  `json:"daily_budget" jsonschema:"daily budget in currency units (capped by the budget guard)"`
 	BiddingStrategy string   `json:"bidding_strategy" jsonschema:"MAXIMIZE_CONVERSIONS, MAXIMIZE_CONVERSION_VALUE, or TARGET_CPA"`
+	TargetCPA       float64  `json:"target_cpa,omitempty" jsonschema:"target CPA in currency units (required for TARGET_CPA)"`
+	TargetROAS      float64  `json:"target_roas,omitempty" jsonschema:"optional target ROAS ratio (for MAXIMIZE_CONVERSION_VALUE)"`
 	FinalURLs       []string `json:"final_urls" jsonschema:"final URLs for the asset group"`
 	Headlines       []string `json:"headlines" jsonschema:"3-15 headlines, each at most 30 characters"`
 	LongHeadlines   []string `json:"long_headlines" jsonschema:"1-5 long headlines, each at most 90 characters"`
@@ -105,9 +107,23 @@ func runCreatePmaxCampaign(ctx context.Context, c *Client, args CreatePmaxArgs) 
 	}
 	switch args.BiddingStrategy {
 	case "MAXIMIZE_CONVERSION_VALUE":
-		campaignCreate["maximizeConversionValue"] = map[string]any{}
-	default: // MAXIMIZE_CONVERSIONS, TARGET_CPA, and unknown all map to maximizeConversions
+		mcv := map[string]any{}
+		if args.TargetROAS > 0 {
+			mcv["targetRoas"] = args.TargetROAS
+		}
+		campaignCreate["maximizeConversionValue"] = mcv
+	case "MAXIMIZE_CONVERSIONS", "":
 		campaignCreate["maximizeConversions"] = map[string]any{}
+	case "TARGET_CPA":
+		// PMax expresses a CPA target as maximizeConversions.targetCpaMicros;
+		// it used to be silently dropped, staging materially different bidding
+		// than requested (issue #14).
+		if args.TargetCPA <= 0 {
+			return WriteResult{}, fmt.Errorf("TARGET_CPA requires target_cpa (currency units)")
+		}
+		campaignCreate["maximizeConversions"] = map[string]any{"targetCpaMicros": microsString(dollarsToMicros(args.TargetCPA))}
+	default:
+		return WriteResult{}, fmt.Errorf("unsupported PMax bidding strategy %q — use MAXIMIZE_CONVERSIONS, MAXIMIZE_CONVERSION_VALUE, or TARGET_CPA", args.BiddingStrategy)
 	}
 	ops = append(ops, map[string]any{"campaignOperation": map[string]any{"create": campaignCreate}})
 

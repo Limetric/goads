@@ -72,3 +72,16 @@ func TestEnableCampaignAndAdGroupHints(t *testing.T) {
 		t.Errorf("ad group hint params = %v", g.Params)
 	}
 }
+
+func TestParseCreateStatus_RejectsRemoved(t *testing.T) {
+	// An entity can never be created in REMOVED status (issue #14).
+	if _, err := parseCreateStatus("REMOVED"); err == nil {
+		t.Fatal("REMOVED should be rejected for create tools")
+	}
+	if s, err := parseCreateStatus(""); err != nil || s != AdStatusPaused {
+		t.Fatalf("default should stay PAUSED, got %v %v", s, err)
+	}
+	if s, err := parseCreateStatus("enabled"); err != nil || s != AdStatusEnabled {
+		t.Fatalf("ENABLED should pass, got %v %v", s, err)
+	}
+}

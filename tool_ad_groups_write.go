@@ -18,7 +18,7 @@ type CreateAdGroupArgs struct {
 	Name         string `json:"name" jsonschema:"the ad group name"`
 	CpcBidMicros int64  `json:"cpc_bid_micros,omitempty" jsonschema:"optional default CPC bid in micros"`
 	OmitType     bool   `json:"omit_type,omitempty" jsonschema:"omit the ad group type; required for App campaigns"`
-	Status       string `json:"status,omitempty" jsonschema:"ENABLED, PAUSED, or REMOVED; defaults to PAUSED"`
+	Status       string `json:"status,omitempty" jsonschema:"ENABLED or PAUSED; defaults to PAUSED"`
 	Confirm      string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
 
@@ -30,7 +30,7 @@ func runCreateAdGroup(ctx context.Context, c *Client, args CreateAdGroupArgs) (W
 	if args.Name == "" {
 		return WriteResult{}, fmt.Errorf("name must not be empty")
 	}
-	status, err := parseAdStatus(args.Status)
+	status, err := parseCreateStatus(args.Status)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -38,6 +38,12 @@ func runCreateAdGroup(ctx context.Context, c *Client, args CreateAdGroupArgs) (W
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
 	create := map[string]any{
 		"campaign": fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID),
 		"name":     args.Name,
@@ -81,6 +87,12 @@ func runUpdateAdGroup(ctx context.Context, c *Client, args UpdateAdGroupArgs) (W
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
+		return WriteResult{}, err
+	}
 	update := map[string]any{"resourceName": fmt.Sprintf("customers/%s/adGroups/%s", cid, args.AdGroupID)}
 	var mask []string
 	if args.Name != "" {

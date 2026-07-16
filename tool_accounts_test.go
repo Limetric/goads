@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -44,5 +45,52 @@ func TestRunAccounts_APIError(t *testing.T) {
 	defer srv.Close()
 	if _, err := runAccounts(t.Context(), newTestClient(t, srv), AccountsArgs{}); err == nil {
 		t.Fatal("expected an API error to surface")
+	}
+}
+
+func TestRunAccounts_FallsBackWithoutLoginCustomerID(t *testing.T) {
+	// Without a login customer ID the old query built the malformed path
+	// customers//googleAds:search and 404ed (issue #14); it now falls back to
+	// listAccessibleCustomers.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "customers:listAccessibleCustomers") {
+			_, _ = w.Write([]byte(`{"resourceNames":["customers/111","customers/222"]}`))
+			return
+		}
+		t.Errorf("unexpected path %q", r.URL.Path)
+	}))
+	defer srv.Close()
+	cfg := &Config{BaseURL: srv.URL} // no LoginCustomerID
+	c, err := NewClient(context.Background(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := runAccounts(t.Context(), c, AccountsArgs{})
+	if err != nil {
+		t.Fatalf("runAccounts: %v", err)
+	}
+	if len(res.CustomerIDs) != 2 || res.CustomerIDs[0] != "111" {
+		t.Fatalf("CustomerIDs = %v", res.CustomerIDs)
+	}
+	if res.Message == "" {
+		t.Error("fallback should explain itself in Message")
+	}
+}
+
+func TestRunAccounts_IncludesNames(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{"customerClient":{"id":"333","descriptiveName":"Acme"}}]}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	res, err := runAccounts(t.Context(), c, AccountsArgs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The query always selected descriptive_name and then discarded it.
+	if res.Names["333"] != "Acme" {
+		t.Errorf("Names = %v, want 333->Acme", res.Names)
 	}
 }

@@ -15,8 +15,21 @@ import (
 var validEntityTypes = []string{"campaign", "ad_group", "ad", "keyword"}
 
 // entityResourceAndOp maps an entity type to its REST resource path and the
-// mutate operation key that targets it.
+// mutate operation key that targets it. Campaigns and ad groups take a plain
+// numeric ID; ads and keywords live under composite adGroupId~entityId
+// resources — a bare ID would preview fine and fail only at confirm with an
+// invalid-resource-name error (issue #14).
 func entityResourceAndOp(cid, entityType, entityID string) (resource, opKey string, err error) {
+	switch entityType {
+	case "campaign", "ad_group":
+		if _, err := numericID("entity_id", entityID); err != nil {
+			return "", "", err
+		}
+	case "ad", "keyword":
+		if err := validateCompositeID(entityType, entityID); err != nil {
+			return "", "", err
+		}
+	}
 	switch entityType {
 	case "campaign":
 		return fmt.Sprintf("customers/%s/campaigns/%s", cid, entityID), "campaignOperation", nil
@@ -31,11 +44,25 @@ func entityResourceAndOp(cid, entityType, entityID string) (resource, opKey stri
 	}
 }
 
+// validateCompositeID checks the adGroupId~entityId shape ads and keywords use.
+func validateCompositeID(entityType, id string) error {
+	parts := strings.Split(id, "~")
+	if len(parts) != 2 {
+		return fmt.Errorf("entity_id for a %s must be the composite adGroupId~%sId (e.g. 111~222), got %q", entityType, entityType, id)
+	}
+	for _, p := range parts {
+		if _, err := numericID("entity_id", p); err != nil {
+			return fmt.Errorf("entity_id for a %s must be the composite adGroupId~%sId with numeric parts, got %q", entityType, entityType, id)
+		}
+	}
+	return nil
+}
+
 // EntityActionArgs pauses, enables, or removes a single entity.
 type EntityActionArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the entity"`
 	EntityType string `json:"entity_type" jsonschema:"one of: campaign, ad_group, ad, keyword"`
-	EntityID   string `json:"entity_id" jsonschema:"the entity ID (for an ad, the composite adGroupId~adId)"`
+	EntityID   string `json:"entity_id" jsonschema:"the entity ID; for an ad or keyword this is the composite adGroupId~entityId (e.g. 111~222)"`
 	Confirm    string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
 
@@ -59,6 +86,9 @@ func entityStatusChange(ctx context.Context, c *Client, args EntityActionArgs, t
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
 	resource, opKey, err := entityResourceAndOp(cid, args.EntityType, args.EntityID)
 	if err != nil {
 		return WriteResult{}, err
@@ -85,6 +115,9 @@ func runRemoveEntity(ctx context.Context, c *Client, args EntityActionArgs) (Wri
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
 	resource, opKey, err := entityResourceAndOp(cid, args.EntityType, args.EntityID)
 	if err != nil {
 		return WriteResult{}, err

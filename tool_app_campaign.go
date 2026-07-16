@@ -82,12 +82,9 @@ func runCreateAppCampaign(ctx context.Context, c *Client, args CreateAppCampaign
 			return WriteResult{}, fmt.Errorf("asset resource names cannot be empty")
 		}
 	}
-	status, err := parseAdStatus(args.Status)
+	status, err := parseCreateStatus(args.Status)
 	if err != nil {
 		return WriteResult{}, err
-	}
-	if status == AdStatusRemoved {
-		return WriteResult{}, fmt.Errorf("app campaign creation status must be ENABLED or PAUSED")
 	}
 	for _, geoID := range args.GeoTargetIDs {
 		if strings.TrimSpace(geoID) == "" {

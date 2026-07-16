@@ -60,6 +60,10 @@ func validateSchedule(s ScheduleEntry) error {
 	if !valid[s.StartMinute] || !valid[s.EndMinute] {
 		return fmt.Errorf("minutes must be 0, 15, 30, or 45, got start=%d end=%d", s.StartMinute, s.EndMinute)
 	}
+	// The window must end after it starts (issue #14).
+	if s.EndHour*60+s.EndMinute <= s.StartHour*60+s.StartMinute {
+		return fmt.Errorf("schedule window must end after it starts, got %02d:%02d-%02d:%02d", s.StartHour, s.StartMinute, s.EndHour, s.EndMinute)
+	}
 	return nil
 }
 
@@ -99,7 +103,7 @@ func runSetCampaignSchedule(ctx context.Context, c *Client, args SetScheduleArgs
 			},
 		}
 	}
-	summary := fmt.Sprintf("Set %d ad-schedule window(s) on campaign %s", len(args.Schedules), args.CampaignID)
+	summary := fmt.Sprintf("Add %d ad-schedule window(s) to campaign %s (additive: existing windows are kept)", len(args.Schedules), args.CampaignID)
 	return previewMutate(tool, cid, summary, ops)
 }
 
