@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestRunBudgetSet_PreviewThenApply(t *testing.T) {
 	useTempState(t)
@@ -30,8 +35,8 @@ func TestRunBudgetSet_PreviewThenApply(t *testing.T) {
 		t.Fatalf("apply failed: result=%+v calls=%d", done, cap.calls)
 	}
 	op := cap.firstOp(t)["campaignBudgetOperation"].(map[string]any)
-	if op["updateMask"] != "amount_micros" {
-		t.Errorf("updateMask = %v, want amount_micros", op["updateMask"])
+	if op["updateMask"] != "amountMicros" {
+		t.Errorf("updateMask = %v, want amountMicros", op["updateMask"])
 	}
 	upd := opUpdate(t, cap.firstOp(t), "campaignBudgetOperation")
 	if upd["resourceName"] != "customers/1234567890/campaignBudgets/555" {
@@ -68,5 +73,47 @@ func TestBudgetSetArgs_Operations(t *testing.T) {
 	// client-side at apply time).
 	if err := validateMutateOps(ops); err != nil {
 		t.Errorf("operation rejected by allow-list: %v", err)
+	}
+}
+
+func TestRunBudgetSet_PartialFailureFailsApply(t *testing.T) {
+	useTempState(t)
+	t.Setenv("GOOGLE_ADS_MAX_DAILY_BUDGET", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		// partialFailure:true means a bad op returns HTTP 200 with the error in
+		// the body; the tool used to report Applied=true for this (issue #7).
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[{}],"partialFailureError":{"code":3,"message":"budget below account minimum"}}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := BudgetSetArgs{CustomerID: "1", BudgetID: "555", AmountMicros: 5_000_000}
+	prev, err := runBudgetSet(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	args.Confirm = prev.Token
+	done, err := runBudgetSet(t.Context(), c, args)
+	if err == nil || !strings.Contains(err.Error(), "budget below account minimum") {
+		t.Fatalf("expected partial-failure error, got result=%+v err=%v", done, err)
+	}
+	if done.Applied {
+		t.Fatal("Applied must be false on partial failure")
+	}
+}
+
+func TestRunBudgetSet_RejectsNonPositiveAmount(t *testing.T) {
+	useTempState(t)
+	if _, err := runBudgetSet(t.Context(), nil, BudgetSetArgs{CustomerID: "1", BudgetID: "5"}); err == nil {
+		t.Fatal("amount_micros = 0 should be rejected")
+	}
+}
+
+func TestRunBudgetSet_HonorsBlockedOps(t *testing.T) {
+	useTempState(t)
+	t.Setenv("GOOGLE_ADS_BLOCKED_OPS", "set_campaign_budget")
+	if _, err := runBudgetSet(t.Context(), nil, BudgetSetArgs{CustomerID: "1", BudgetID: "5", AmountMicros: 1_000_000}); err == nil {
+		t.Fatal("blocked operation should be rejected")
 	}
 }

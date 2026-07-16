@@ -17,14 +17,6 @@ type BudgetSetArgs struct {
 	Confirm      string `json:"confirm,omitempty" jsonschema:"a confirm token returned by a previous preview call; omit to preview"`
 }
 
-// BudgetSetResult is returned in both preview and applied states.
-type BudgetSetResult struct {
-	Applied bool   `json:"applied"`
-	Token   string `json:"confirm_token,omitempty"`
-	Preview string `json:"preview,omitempty"`
-	Detail  string `json:"detail,omitempty"`
-}
-
 func (a BudgetSetArgs) operations() []any {
 	resource := fmt.Sprintf("customers/%s/campaignBudgets/%s", normalizeCustomerID(a.CustomerID), a.BudgetID)
 	return []any{
@@ -34,43 +26,35 @@ func (a BudgetSetArgs) operations() []any {
 					"resourceName": resource,
 					"amountMicros": a.AmountMicros,
 				},
-				"updateMask": "amount_micros",
+				"updateMask": "amountMicros",
 			},
 		},
 	}
 }
 
-// runBudgetSet stages or applies a campaign-budget update.
-func runBudgetSet(ctx context.Context, c *Client, args BudgetSetArgs) (BudgetSetResult, error) {
+// runBudgetSet stages or applies a campaign-budget update via the shared
+// preview/confirm helpers, so partial failures fail the apply (issue #7).
+func runBudgetSet(ctx context.Context, c *Client, args BudgetSetArgs) (WriteResult, error) {
+	const tool = "set_campaign_budget"
 	if args.CustomerID == "" || args.BudgetID == "" {
-		return BudgetSetResult{}, fmt.Errorf("customer_id and budget_id are required")
+		return WriteResult{}, fmt.Errorf("customer_id and budget_id are required")
+	}
+	if args.Confirm != "" {
+		return applyConfirmed(ctx, c, tool, args.Confirm)
+	}
+	cfg := loadSafetyConfig()
+	if err := checkBlockedOperation(tool, cfg); err != nil {
+		return WriteResult{}, toolError(tool, err)
+	}
+	if args.AmountMicros <= 0 {
+		return WriteResult{}, fmt.Errorf("amount_micros must be positive (1 unit of currency = 1,000,000 micros)")
 	}
 	// Guard: reject daily budgets above the configured cap (default $50/day).
-	if err := checkBudgetCap(float64(args.AmountMicros)/1_000_000.0, loadSafetyConfig()); err != nil {
-		return BudgetSetResult{}, toolError("set_campaign_budget", err)
+	if err := checkBudgetCap(float64(args.AmountMicros)/1_000_000.0, cfg); err != nil {
+		return WriteResult{}, toolError(tool, err)
 	}
 	summary := fmt.Sprintf("Set budget %s to %d micros", args.BudgetID, args.AmountMicros)
-
-	// Preview path: stage and return a token. Nothing is mutated.
-	if args.Confirm == "" {
-		p, err := stageMutation("set_campaign_budget", normalizeCustomerID(args.CustomerID), summary, args.operations())
-		if err != nil {
-			return BudgetSetResult{}, err
-		}
-		return BudgetSetResult{Applied: false, Token: p.Token, Preview: p.previewText()}, nil
-	}
-
-	// Apply path: consume the token and execute.
-	p, err := consumeMutation(args.Confirm)
-	if err != nil {
-		return BudgetSetResult{}, err
-	}
-	if _, err := c.Mutate(ctx, p.CustomerID, p.Operations); err != nil {
-		auditLog(p, false)
-		return BudgetSetResult{}, toolError("set_campaign_budget", err)
-	}
-	auditLog(p, true)
-	return BudgetSetResult{Applied: true, Detail: p.Summary}, nil
+	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, args.operations())
 }
 
 // --- CLI front-end ---
