@@ -26,6 +26,19 @@ import (
 
 const adwordsScope = "https://www.googleapis.com/auth/adwords"
 
+// loginCallbackTimeout bounds how long the loopback server waits for Google's
+// redirect. First-time consent flows involve an account picker and often 2FA,
+// so this is deliberately generous.
+const loginCallbackTimeout = 5 * time.Minute
+
+// loopbackRedirectURL builds the OAuth redirect URI for the loopback flow.
+// Google's guidance is the literal IP http://127.0.0.1:<port> — "localhost"
+// can resolve to ::1 while the listener binds the IPv4 loopback, in which case
+// the redirect never arrives (issue #11).
+func loopbackRedirectURL(port int) string {
+	return fmt.Sprintf("http://127.0.0.1:%d", port)
+}
+
 // clientCreds is the OAuth client identity used to mint a refresh token. kind is
 // "installed" (Desktop app), "web", "authorized_user" (already-tokened file), or
 // "config" (taken from env/TOML). refreshToken is set only for authorized_user.
@@ -170,6 +183,14 @@ func runLoopbackOAuth(ctx context.Context, conf *oauth2.Config, openFn func(stri
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
+		// A request carrying none of the OAuth callback parameters is not the
+		// callback — a browser preconnect, favicon fetch, port scanner, or the
+		// user opening the bare URL. Treating those as failed callbacks used to
+		// abort the whole login before the real redirect arrived (issue #11).
+		if q.Get("error") == "" && q.Get("state") == "" && q.Get("code") == "" {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		switch {
 		case q.Get("error") != "":
 			msg := q.Get("error") + ": " + q.Get("error_description")
@@ -202,13 +223,13 @@ func runLoopbackOAuth(ctx context.Context, conf *oauth2.Config, openFn func(stri
 		return "", err
 	}
 
-	timer := time.NewTimer(2 * time.Minute)
+	timer := time.NewTimer(loginCallbackTimeout)
 	defer timer.Stop()
 	select {
 	case res := <-resultCh:
 		return res.code, res.err
 	case <-timer.C:
-		return "", errors.New("no authorization received within 2m — did you approve in the browser?")
+		return "", fmt.Errorf("no authorization received within %s — did you approve in the browser?", loginCallbackTimeout)
 	case <-ctx.Done():
 		return "", ctx.Err()
 	}
@@ -342,7 +363,7 @@ var loginCmd = &cobra.Command{
 				ClientID:     creds.clientID,
 				ClientSecret: creds.clientSecret,
 				Endpoint:     googleOAuthEndpoint,
-				RedirectURL:  fmt.Sprintf("http://localhost:%d", loginPort),
+				RedirectURL:  loopbackRedirectURL(loginPort),
 				Scopes:       []string{adwordsScope},
 			}
 			addr := fmt.Sprintf("127.0.0.1:%d", loginPort)
@@ -350,7 +371,15 @@ var loginCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("listen on %s: %w — is the port busy? pass --port", addr, err)
 			}
-			openFn := openBrowser
+			openFn := func(u string) error {
+				// A missing browser opener (headless Linux without xdg-open)
+				// must not abort the login — fall back to printing the URL,
+				// like the wizard path does (issue #11).
+				if err := openBrowser(u); err != nil {
+					fmt.Fprintf(out, "Could not open a browser (%v).\nOpen this URL manually:\n  %s\n", err, u)
+				}
+				return nil
+			}
 			if loginNoBrowser {
 				openFn = func(u string) error {
 					fmt.Fprintf(out, "Open this URL in your browser:\n  %s\n", u)

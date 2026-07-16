@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"golang.org/x/oauth2"
 )
 
 // liveServer fakes the two endpoints doctor's live check probes: the metadata
@@ -142,5 +145,20 @@ func TestLiveVerdictFor(t *testing.T) {
 		if got := liveVerdictFor(c.err); got != c.want {
 			t.Errorf("%s: liveVerdictFor = %v, want %v", c.name, got, c.want)
 		}
+	}
+}
+
+func TestLiveVerdictFor_OAuthInvalidGrantIsDefinitive(t *testing.T) {
+	// A 4xx from the token endpoint (revoked/mistyped refresh token) is a
+	// broken setup, not an inconclusive network problem (issue #11).
+	retrieveErr := &oauth2.RetrieveError{Response: &http.Response{StatusCode: 400}, Body: []byte(`{"error":"invalid_grant"}`)}
+	wrapped := fmt.Errorf("obtain access token: %w", retrieveErr)
+	if got := liveVerdictFor(wrapped); got != liveFailed {
+		t.Fatalf("invalid_grant should be liveFailed, got %v", got)
+	}
+	// A 5xx from the token endpoint stays inconclusive.
+	serverErr := &oauth2.RetrieveError{Response: &http.Response{StatusCode: 503}}
+	if got := liveVerdictFor(fmt.Errorf("obtain access token: %w", serverErr)); got != liveInconclusive {
+		t.Fatalf("token-endpoint 5xx should be liveInconclusive, got %v", got)
 	}
 }

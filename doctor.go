@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/oauth2"
 )
 
 // doctorOffline backs the `--offline` flag: by default doctor makes real API
@@ -70,16 +71,23 @@ const (
 )
 
 // liveVerdictFor classifies a live-probe error. A 4xx from the Ads API is
-// definitive — the request or credentials are wrong (liveFailed). Anything else
-// — a 5xx, a connection failure, an OAuth/token error — means we simply
-// couldn't get a verdict (liveInconclusive), which must not be reported as a
-// broken setup.
+// definitive — the request or credentials are wrong (liveFailed). So is a 4xx
+// from the OAuth token endpoint (oauth2.RetrieveError): invalid_grant means
+// the refresh token is revoked or mistyped, which used to be misreported as
+// "inconclusive — not necessarily broken" (issue #11). Anything else — a 5xx,
+// a connection failure — means we simply couldn't get a verdict
+// (liveInconclusive), which must not be reported as a broken setup.
 func liveVerdictFor(err error) liveResult {
 	if err == nil {
 		return liveOK
 	}
 	var apiErr *apiStatusError
 	if errors.As(err, &apiErr) && apiErr.isClientError() {
+		return liveFailed
+	}
+	var oauthErr *oauth2.RetrieveError
+	if errors.As(err, &oauthErr) && oauthErr.Response != nil &&
+		oauthErr.Response.StatusCode >= 400 && oauthErr.Response.StatusCode < 500 {
 		return liveFailed
 	}
 	return liveInconclusive

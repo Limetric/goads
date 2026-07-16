@@ -350,3 +350,48 @@ func TestExchangeRefreshToken_NoRefreshToken(t *testing.T) {
 		t.Fatalf("expected actionable no-refresh-token error, got %v", err)
 	}
 }
+
+func TestRunLoopbackOAuth_IgnoresStrayRequests(t *testing.T) {
+	conf, ln := newLoopbackConf(t)
+	openFn := func(authURL string) error {
+		u, err := url.Parse(authURL)
+		if err != nil {
+			return err
+		}
+		state := u.Query().Get("state")
+		go func() {
+			base := "http://" + ln.Addr().String()
+			// Stray hits arrive before the real callback: a bare request (browser
+			// preconnect / user opening the URL) and a favicon fetch. These used
+			// to be treated as failed callbacks and aborted the login (issue #11).
+			if resp, err := http.Get(base + "/"); err == nil {
+				if resp.StatusCode != http.StatusNoContent {
+					t.Errorf("bare request status = %d, want 204", resp.StatusCode)
+				}
+				resp.Body.Close()
+			}
+			if resp, err := http.Get(base + "/favicon.ico"); err == nil {
+				resp.Body.Close()
+			}
+			if resp, err := http.Get(base + "/?code=realcode&state=" + state); err == nil {
+				resp.Body.Close()
+			}
+		}()
+		return nil
+	}
+	code, err := runLoopbackOAuth(context.Background(), conf, openFn, ln)
+	if err != nil {
+		t.Fatalf("stray requests must not abort the login: %v", err)
+	}
+	if code != "realcode" {
+		t.Fatalf("got code %q, want realcode", code)
+	}
+}
+
+func TestLoopbackRedirectURL_UsesLiteralLoopbackIP(t *testing.T) {
+	// Google's loopback guidance: use http://127.0.0.1:<port>, not localhost,
+	// which can resolve to ::1 while the listener binds IPv4 (issue #11).
+	if got := loopbackRedirectURL(8085); got != "http://127.0.0.1:8085" {
+		t.Fatalf("loopbackRedirectURL = %q", got)
+	}
+}
