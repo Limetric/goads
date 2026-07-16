@@ -143,6 +143,12 @@ func runAddNegativeKeywords(ctx context.Context, c *Client, args AddNegativeKeyw
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
 	campaignResource := fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID)
 	ops := make([]any, len(args.Keywords))
 	for i, kw := range args.Keywords {
@@ -181,6 +187,15 @@ func runRemoveKeywords(ctx context.Context, c *Client, args RemoveKeywordsArgs) 
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
+		return WriteResult{}, err
+	}
+	if err := numericIDs("criterion_id", args.CriterionIDs); err != nil {
+		return WriteResult{}, err
+	}
 	ops := make([]any, len(args.CriterionIDs))
 	for i, critID := range args.CriterionIDs {
 		ops[i] = map[string]any{
@@ -214,6 +229,15 @@ func runRemoveNegativeKeywords(ctx context.Context, c *Client, args RemoveNegati
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
+	if err := numericIDs("criterion_id", args.CriterionIDs); err != nil {
+		return WriteResult{}, err
+	}
 	ops := make([]any, len(args.CriterionIDs))
 	for i, critID := range args.CriterionIDs {
 		ops[i] = map[string]any{

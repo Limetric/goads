@@ -14,8 +14,10 @@ import (
 
 // applyBiddingStrategyCreate sets the bidding sub-field on a campaign create
 // map. In v23 bidding_strategy_type is OUTPUT_ONLY, so the strategy is selected
-// by setting the matching sub-field. cpa/roas of 0 mean "unset".
-func applyBiddingStrategyCreate(campaign map[string]any, strategy string, cpa, roas float64) {
+// by setting the matching sub-field. TARGET_CPA/TARGET_ROAS require their
+// target and unknown strategies error at preview — leaving bidding unset used
+// to stage a campaign Google rejected only at confirm time.
+func applyBiddingStrategyCreate(campaign map[string]any, strategy string, cpa, roas float64) error {
 	switch strategy {
 	case "MAXIMIZE_CONVERSIONS":
 		mc := map[string]any{}
@@ -30,13 +32,15 @@ func applyBiddingStrategyCreate(campaign map[string]any, strategy string, cpa, r
 		}
 		campaign["maximizeConversionValue"] = mcv
 	case "TARGET_CPA":
-		if cpa != 0 {
-			campaign["targetCpa"] = map[string]any{"targetCpaMicros": microsString(dollarsToMicros(cpa))}
+		if cpa == 0 {
+			return fmt.Errorf("TARGET_CPA requires target_cpa (currency units)")
 		}
+		campaign["targetCpa"] = map[string]any{"targetCpaMicros": microsString(dollarsToMicros(cpa))}
 	case "TARGET_ROAS":
-		if roas != 0 {
-			campaign["targetRoas"] = map[string]any{"targetRoas": roas}
+		if roas == 0 {
+			return fmt.Errorf("TARGET_ROAS requires target_roas (a ratio, e.g. 3.5)")
 		}
+		campaign["targetRoas"] = map[string]any{"targetRoas": roas}
 	case "MANUAL_CPC":
 		campaign["manualCpc"] = map[string]any{}
 	case "TARGET_SPEND", "MAXIMIZE_CLICKS":
@@ -45,8 +49,12 @@ func applyBiddingStrategyCreate(campaign map[string]any, strategy string, cpa, r
 		campaign["targetImpressionShare"] = map[string]any{}
 	case "PERCENT_CPC":
 		campaign["percentCpc"] = map[string]any{}
+	case "":
+		return fmt.Errorf("bidding_strategy is required (e.g. MAXIMIZE_CONVERSIONS)")
+	default:
+		return fmt.Errorf("unsupported bidding strategy %q — use one of MAXIMIZE_CONVERSIONS, MAXIMIZE_CONVERSION_VALUE, TARGET_CPA, TARGET_ROAS, MANUAL_CPC, TARGET_SPEND/MAXIMIZE_CLICKS, TARGET_IMPRESSION_SHARE, PERCENT_CPC", strategy)
 	}
-	// Unknown strategies leave bidding unset; the API rejects with a clear error.
+	return nil
 }
 
 // adGroupTypeForChannel maps a channel type to its standard ad group type.
@@ -152,10 +160,18 @@ func runDraftCampaign(ctx context.Context, c *Client, args DraftCampaignArgs) (W
 		// Required by EU TTPA regulation (Oct 2025+); defaults to "does not contain".
 		"containsEuPoliticalAdvertising": "DOES_NOT_CONTAIN_EU_POLITICAL_ADVERTISING",
 	}
-	applyBiddingStrategyCreate(campaignCreate, args.BiddingStrategy, args.TargetCPA, args.TargetROAS)
+	if err := applyBiddingStrategyCreate(campaignCreate, args.BiddingStrategy, args.TargetCPA, args.TargetROAS); err != nil {
+		return WriteResult{}, err
+	}
 	ops = append(ops, map[string]any{"campaignOperation": map[string]any{"create": campaignCreate}})
 
 	// 3. Geo targets, 4. Language targets.
+	if err := numericIDs("geo_target_id", args.GeoTargetIDs); err != nil {
+		return WriteResult{}, err
+	}
+	if err := numericIDs("language_id", args.LanguageIDs); err != nil {
+		return WriteResult{}, err
+	}
 	for _, geoID := range args.GeoTargetIDs {
 		ops = append(ops, campaignLocationCriterion(campaignResource, geoID))
 	}

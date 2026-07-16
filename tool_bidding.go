@@ -61,6 +61,9 @@ func runCreatePortfolioBidding(ctx context.Context, c *Client, args PortfolioBid
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
+	if normalizeCustomerID(args.CustomerID) == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
 	op := map[string]any{"biddingStrategyOperation": map[string]any{"create": strategy}}
 	summary := fmt.Sprintf("Create %s portfolio bidding strategy %q", args.StrategyType, args.Name)
 	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, []any{op})

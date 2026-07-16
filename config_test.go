@@ -121,6 +121,7 @@ func TestConfig_IsTest(t *testing.T) {
 		"https://googleads.googleapis.com/v24":  false, // future version: REAL credentials (issue #5)
 		"https://googleads.googleapis.com/v23/": false, // trailing slash: REAL credentials (issue #5)
 		"https://ads-proxy.example.com/v23":     false, // custom HTTPS endpoint: REAL credentials
+		"http://internal-proxy:8080/v23":        false, // remote plain-HTTP: REAL credentials, not test mode
 	}
 	for baseURL, want := range cases {
 		if got := (&Config{BaseURL: baseURL}).isTest(); got != want {

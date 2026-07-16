@@ -388,7 +388,7 @@ var loginCmd = &cobra.Command{
 			} else {
 				fmt.Fprintln(out, "Opening browser for Google sign-in…")
 			}
-			fmt.Fprintf(out, "Waiting for callback on http://localhost:%d …\n", loginPort)
+			fmt.Fprintf(out, "Waiting for callback on %s …\n", loopbackRedirectURL(loginPort))
 			code, err := runLoopbackOAuth(cmd.Context(), conf, openFn, ln)
 			if err != nil {
 				return err

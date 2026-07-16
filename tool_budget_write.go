@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
@@ -55,8 +57,54 @@ func runBudgetSet(ctx context.Context, c *Client, args BudgetSetArgs) (WriteResu
 	if err := checkBudgetCap(float64(args.AmountMicros)/1_000_000.0, cfg); err != nil {
 		return WriteResult{}, toolError(tool, err)
 	}
+	cid := normalizeCustomerID(args.CustomerID)
+	if _, err := numericID("budget_id", args.BudgetID); err != nil {
+		return WriteResult{}, err
+	}
 	summary := fmt.Sprintf("Set budget %s to %d micros", args.BudgetID, args.AmountMicros)
-	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, args.operations())
+	// Budget increases over 50% take a second confirmation (issue #12). The
+	// current amount is fetched best-effort; when it can't be determined the
+	// write stays single-confirm.
+	if cur := fetchBudgetAmountMicros(ctx, c, cid, args.BudgetID); cur > 0 {
+		curUnits, propUnits := float64(cur)/1_000_000.0, float64(args.AmountMicros)/1_000_000.0
+		if requiresDoubleConfirmation(tool, &curUnits, &propUnits) {
+			return previewMutateDouble(tool, cid, summary, args.operations())
+		}
+	}
+	return previewMutate(tool, cid, summary, args.operations())
+}
+
+// fetchBudgetAmountMicros looks up a campaign budget's current daily amount.
+// Best-effort: 0 when it cannot be determined.
+func fetchBudgetAmountMicros(ctx context.Context, c *Client, customerID, budgetID string) int64 {
+	if c == nil {
+		return 0
+	}
+	q := fmt.Sprintf("SELECT campaign_budget.amount_micros FROM campaign_budget WHERE campaign_budget.id = %s", budgetID)
+	rows, err := c.Search(ctx, customerID, q)
+	if err != nil || len(rows) == 0 {
+		return 0
+	}
+	var row struct {
+		CampaignBudget struct {
+			AmountMicros any `json:"amountMicros"`
+		} `json:"campaignBudget"`
+	}
+	if json.Unmarshal(rows[0], &row) != nil {
+		return 0
+	}
+	switch v := row.CampaignBudget.AmountMicros.(type) {
+	case string:
+		micros, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0
+		}
+		return micros
+	case float64:
+		return int64(v)
+	default:
+		return 0
+	}
 }
 
 // --- CLI front-end ---

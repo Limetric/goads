@@ -185,7 +185,7 @@ func confirmBrowserOpen(p prompter, out io.Writer, port int, openFn func(string)
 				}
 			}
 		}
-		fmt.Fprintf(out, "   Waiting for callback on http://localhost:%d …\n", port)
+		fmt.Fprintf(out, "   Waiting for callback on %s …\n", loopbackRedirectURL(port))
 		return nil
 	}
 }

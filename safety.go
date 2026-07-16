@@ -56,12 +56,23 @@ type PendingMutation struct {
 
 // stageMutation persists a pending googleAds:mutate and returns its confirm token.
 func stageMutation(tool, customerID, summary string, ops []any) (*PendingMutation, error) {
-	return stageDispatch(tool, customerID, summary, dispatchMutate, ops, nil)
+	return stageDispatchFull(tool, customerID, summary, dispatchMutate, ops, nil, false)
+}
+
+// stageMutationDouble is stageMutation for writes that must take a second
+// confirmation regardless of the tool name — e.g. budget increases over 50%
+// (issue #12).
+func stageMutationDouble(tool, customerID, summary string, ops []any) (*PendingMutation, error) {
+	return stageDispatchFull(tool, customerID, summary, dispatchMutate, ops, nil, true)
 }
 
 // stageDispatch persists a pending write with an explicit dispatch route. Used
 // by recommendation tools that must route to dedicated RPCs on apply.
 func stageDispatch(tool, customerID, summary, dispatch string, ops []any, resourceNames []string) (*PendingMutation, error) {
+	return stageDispatchFull(tool, customerID, summary, dispatch, ops, resourceNames, false)
+}
+
+func stageDispatchFull(tool, customerID, summary, dispatch string, ops []any, resourceNames []string, forceDouble bool) (*PendingMutation, error) {
 	tok, err := newToken()
 	if err != nil {
 		return nil, err
@@ -75,7 +86,7 @@ func stageDispatch(tool, customerID, summary, dispatch string, ops []any, resour
 		Dispatch:       dispatch,
 		ResourceNames:  resourceNames,
 		CreatedAt:      time.Now().UTC(),
-		RequiresDouble: requiresDoubleConfirmation(tool, nil, nil),
+		RequiresDouble: forceDouble || requiresDoubleConfirmation(tool, nil, nil),
 	}
 	dir, err := stateDir()
 	if err != nil {
@@ -96,7 +107,8 @@ func stageDispatch(tool, customerID, summary, dispatch string, ops []any, resour
 }
 
 // sweepExpired removes pending files past their TTL so abandoned previews
-// don't accumulate in the state dir forever. Best-effort.
+// don't accumulate in the state dir forever. Best-effort. Includes .claimed
+// leftovers a crash between claim and remove could strand.
 func sweepExpired(dir string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -104,7 +116,8 @@ func sweepExpired(dir string) {
 	}
 	for _, e := range entries {
 		name := e.Name()
-		if !strings.HasPrefix(name, "pending-") || !strings.HasSuffix(name, ".json") {
+		if !strings.HasPrefix(name, "pending-") ||
+			(!strings.HasSuffix(name, ".json") && !strings.HasSuffix(name, ".json.claimed")) {
 			continue
 		}
 		info, err := e.Info()

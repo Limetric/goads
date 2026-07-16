@@ -117,3 +117,66 @@ func TestRunBudgetSet_HonorsBlockedOps(t *testing.T) {
 		t.Fatal("blocked operation should be rejected")
 	}
 }
+
+func TestRunBudgetSet_LargeIncreaseNeedsDoubleConfirm(t *testing.T) {
+	useTempState(t)
+	t.Setenv("GOOGLE_ADS_MAX_DAILY_BUDGET", "")
+	// Budget increases over 50% take a second confirmation (issue #12): the
+	// current amount ($1/day) is fetched from the API, and the jump to $5/day
+	// re-stages on the first confirm instead of applying.
+	var mutates int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "googleAds:search") {
+			_, _ = w.Write([]byte(`{"results":[{"campaignBudget":{"amountMicros":"1000000"}}]}`))
+			return
+		}
+		mutates++
+		_, _ = w.Write([]byte(`{"results":[{}]}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := BudgetSetArgs{CustomerID: "1", BudgetID: "555", AmountMicros: 5_000_000}
+	prev, err := runBudgetSet(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	args.Confirm = prev.Token
+	second, err := runBudgetSet(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("first confirm: %v", err)
+	}
+	if second.Applied || second.Token == "" || mutates != 0 {
+		t.Fatalf("first confirm of a >50%% increase must re-stage, got %+v mutates=%d", second, mutates)
+	}
+	args.Confirm = second.Token
+	done, err := runBudgetSet(t.Context(), c, args)
+	if err != nil || !done.Applied || mutates != 1 {
+		t.Fatalf("second confirm should apply: %+v err=%v mutates=%d", done, err, mutates)
+	}
+}
+
+func TestRunBudgetSet_SmallChangeSingleConfirm(t *testing.T) {
+	useTempState(t)
+	t.Setenv("GOOGLE_ADS_MAX_DAILY_BUDGET", "")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "googleAds:search") {
+			_, _ = w.Write([]byte(`{"results":[{"campaignBudget":{"amountMicros":"4000000"}}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"results":[{}]}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	// $4 -> $5 is a 25% increase: one confirm applies.
+	args := BudgetSetArgs{CustomerID: "1", BudgetID: "555", AmountMicros: 5_000_000}
+	prev, _ := runBudgetSet(t.Context(), c, args)
+	args.Confirm = prev.Token
+	done, err := runBudgetSet(t.Context(), c, args)
+	if err != nil || !done.Applied {
+		t.Fatalf("small increase should apply on first confirm: %+v err=%v", done, err)
+	}
+}

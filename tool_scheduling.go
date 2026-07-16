@@ -85,6 +85,12 @@ func runSetCampaignSchedule(ctx context.Context, c *Client, args SetScheduleArgs
 	}
 
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
 	campaignResource := fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID)
 	ops := make([]any, len(args.Schedules))
 	for i, s := range args.Schedules {

@@ -64,6 +64,16 @@ func numericID(kind, id string) (string, error) {
 	return id, nil
 }
 
+// numericIDs validates every entry of a caller-supplied ID list.
+func numericIDs(kind string, ids []string) error {
+	for _, id := range ids {
+		if _, err := numericID(kind, id); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // escapeGAQLString escapes a value for interpolation inside a single-quoted
 // GAQL string literal: backslashes first, then quotes — escaping only quotes
 // lets a trailing backslash break out of the literal.

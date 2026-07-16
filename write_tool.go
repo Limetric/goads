@@ -67,6 +67,16 @@ func previewMutate(tool, customerID, summary string, ops []any) (WriteResult, er
 	return previewResult(p), nil
 }
 
+// previewMutateDouble is previewMutate for writes that must take a second
+// confirmation (e.g. budget increases over 50% — issue #12).
+func previewMutateDouble(tool, customerID, summary string, ops []any) (WriteResult, error) {
+	p, err := stageMutationDouble(tool, customerID, summary, ops)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	return previewResult(p), nil
+}
+
 // applyConfirmed consumes a confirm token and applies the staged write via the
 // correct dispatch, writing an audit line on both success and failure.
 func applyConfirmed(ctx context.Context, c *Client, tool, confirm string) (WriteResult, error) {

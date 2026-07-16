@@ -173,3 +173,83 @@ func TestApplyConfirmed_RejectsTokenFromOtherTool(t *testing.T) {
 		t.Fatal("token should have been consumed by the mismatched attempt")
 	}
 }
+
+// TestWriteHandlers_RejectMalformedInputs pins the handler-level validation
+// MCP callers rely on (cobra's required flags don't apply to them): empty
+// customer IDs and non-numeric entity IDs must fail at preview, not stage
+// malformed resource names that die at confirm time.
+func TestWriteHandlers_RejectMalformedInputs(t *testing.T) {
+	useTempState(t)
+	bad := "5 OR 1=1"
+	cases := map[string]func() error{
+		"pmax empty customer": func() error {
+			a := validPmaxArgs()
+			a.CustomerID = ""
+			_, err := runCreatePmaxCampaign(t.Context(), nil, a)
+			return err
+		},
+		"pmax bad geo id": func() error {
+			a := validPmaxArgs()
+			a.GeoTargetIDs = []string{bad}
+			_, err := runCreatePmaxCampaign(t.Context(), nil, a)
+			return err
+		},
+		"schedule bad campaign id": func() error {
+			_, err := runSetCampaignSchedule(t.Context(), nil, SetScheduleArgs{CustomerID: "1", CampaignID: bad,
+				Schedules: []ScheduleEntry{{DayOfWeek: "MONDAY", StartHour: 9, EndHour: 17}}})
+			return err
+		},
+		"sitelinks bad campaign id": func() error {
+			_, err := runDraftSitelinks(t.Context(), nil, DraftSitelinksArgs{CustomerID: "1", CampaignID: bad,
+				Sitelinks: []SitelinkInput{{LinkText: "x", FinalURL: "https://x"}}})
+			return err
+		},
+		"remove extension bad asset id": func() error {
+			_, err := runRemoveExtension(t.Context(), nil, RemoveExtensionArgs{CustomerID: "1", CampaignID: "5", AssetID: bad, FieldType: "SITELINK"})
+			return err
+		},
+		"negative keywords bad campaign id": func() error {
+			_, err := runAddNegativeKeywords(t.Context(), nil, AddNegativeKeywordsArgs{CustomerID: "1", CampaignID: bad, Keywords: []string{"x"}, MatchType: "EXACT"})
+			return err
+		},
+		"remove keywords bad criterion id": func() error {
+			_, err := runRemoveKeywords(t.Context(), nil, RemoveKeywordsArgs{CustomerID: "1", AdGroupID: "10", CriterionIDs: []string{bad}})
+			return err
+		},
+		"remove negative keywords empty customer": func() error {
+			_, err := runRemoveNegativeKeywords(t.Context(), nil, RemoveNegativeKeywordsArgs{CampaignID: "5", CriterionIDs: []string{"9"}})
+			return err
+		},
+		"portfolio bidding empty customer": func() error {
+			_, err := runCreatePortfolioBidding(t.Context(), nil, PortfolioBiddingArgs{Name: "n", StrategyType: "TARGET_CPA", TargetCPA: 5})
+			return err
+		},
+		"app ad bad ad group id": func() error {
+			_, err := runDraftAppAd(t.Context(), nil, DraftAppAdArgs{CustomerID: "1", AdGroupID: bad, Headlines: []string{"h"}, Descriptions: []string{"d"}})
+			return err
+		},
+		"budget set bad budget id": func() error {
+			_, err := runBudgetSet(t.Context(), nil, BudgetSetArgs{CustomerID: "1", BudgetID: bad, AmountMicros: 1_000_000})
+			return err
+		},
+		"update campaign negative budget": func() error {
+			_, err := runUpdateCampaign(t.Context(), nil, UpdateCampaignArgs{CustomerID: "1", CampaignID: "5", DailyBudget: -3})
+			return err
+		},
+		"draft campaign zero-target TARGET_CPA": func() error {
+			_, err := runDraftCampaign(t.Context(), nil, DraftCampaignArgs{CustomerID: "1", CampaignName: "C",
+				DailyBudget: 5, AdGroupName: "AG", BiddingStrategy: "TARGET_CPA"})
+			return err
+		},
+		"draft campaign bad language id": func() error {
+			_, err := runDraftCampaign(t.Context(), nil, DraftCampaignArgs{CustomerID: "1", CampaignName: "C",
+				DailyBudget: 5, AdGroupName: "AG", BiddingStrategy: "MANUAL_CPC", LanguageIDs: []string{bad}})
+			return err
+		},
+	}
+	for name, run := range cases {
+		if err := run(); err == nil {
+			t.Errorf("%s: expected a preview-time validation error", name)
+		}
+	}
+}

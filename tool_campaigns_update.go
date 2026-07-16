@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -66,26 +67,38 @@ func applyBiddingStrategyUpdate(campaign map[string]any, mask *[]string, strateg
 	return nil
 }
 
-// resolveCampaignBudgetResource looks up a campaign's budget resource name. A
-// campaign budget has its own ID distinct from the campaign ID, so a budget
-// update must target the real budget resource.
-func resolveCampaignBudgetResource(ctx context.Context, c *Client, customerID, campaignID string) (string, error) {
-	q := fmt.Sprintf("SELECT campaign.campaign_budget FROM campaign WHERE campaign.id = %s", campaignID)
+// resolveCampaignBudgetResource looks up a campaign's budget resource name and
+// current daily amount. A campaign budget has its own ID distinct from the
+// campaign ID, so a budget update must target the real budget resource. The
+// amount is best-effort (0 when not returned) and feeds the >50%-increase
+// double-confirm heuristic.
+func resolveCampaignBudgetResource(ctx context.Context, c *Client, customerID, campaignID string) (string, int64, error) {
+	q := fmt.Sprintf("SELECT campaign.campaign_budget, campaign_budget.amount_micros FROM campaign WHERE campaign.id = %s", campaignID)
 	rows, err := c.Search(ctx, customerID, q)
 	if err != nil {
-		return "", err
+		return "", 0, err
 	}
 	if len(rows) > 0 {
 		var row struct {
 			Campaign struct {
 				CampaignBudget string `json:"campaignBudget"`
 			} `json:"campaign"`
+			CampaignBudget struct {
+				AmountMicros any `json:"amountMicros"`
+			} `json:"campaignBudget"`
 		}
 		if json.Unmarshal(rows[0], &row) == nil && row.Campaign.CampaignBudget != "" {
-			return row.Campaign.CampaignBudget, nil
+			var amount int64
+			switch v := row.CampaignBudget.AmountMicros.(type) {
+			case string:
+				amount, _ = strconv.ParseInt(v, 10, 64)
+			case float64:
+				amount = int64(v)
+			}
+			return row.Campaign.CampaignBudget, amount, nil
 		}
 	}
-	return "", fmt.Errorf("could not resolve a campaign budget for campaign %s — the campaign may not exist or has no associated budget", campaignID)
+	return "", 0, fmt.Errorf("could not resolve a campaign budget for campaign %s — the campaign may not exist or has no associated budget", campaignID)
 }
 
 // UpdateCampaignArgs updates an existing campaign's settings. Only the provided
@@ -122,15 +135,24 @@ func runUpdateCampaign(ctx context.Context, c *Client, args UpdateCampaignArgs) 
 	}
 	campaignResource := fmt.Sprintf("customers/%s/campaigns/%s", cid, campaignID)
 	var ops []any
+	doubleConfirm := false
 
 	// Budget update — resolve the real budget resource first.
 	if args.DailyBudget != 0 {
+		if args.DailyBudget < 0 {
+			return WriteResult{}, fmt.Errorf("daily_budget must be positive (currency units), got %v", args.DailyBudget)
+		}
 		if err := checkBudgetCap(args.DailyBudget, loadSafetyConfig()); err != nil {
 			return WriteResult{}, toolError(tool, err)
 		}
-		budgetResource, err := resolveCampaignBudgetResource(ctx, c, cid, campaignID)
+		budgetResource, currentMicros, err := resolveCampaignBudgetResource(ctx, c, cid, campaignID)
 		if err != nil {
 			return WriteResult{}, toolError(tool, err)
+		}
+		// Budget increases over 50% take a second confirmation (issue #12).
+		if currentMicros > 0 {
+			cur := float64(currentMicros) / 1_000_000.0
+			doubleConfirm = requiresDoubleConfirmation(tool, &cur, &args.DailyBudget)
 		}
 		ops = append(ops, map[string]any{"campaignBudgetOperation": map[string]any{
 			"update":     map[string]any{"resourceName": budgetResource, "amountMicros": microsString(dollarsToMicros(args.DailyBudget))},
@@ -149,6 +171,12 @@ func runUpdateCampaign(ctx context.Context, c *Client, args UpdateCampaignArgs) 
 	}
 
 	// Geo and language additions.
+	if err := numericIDs("geo_target_id", args.GeoTargetIDs); err != nil {
+		return WriteResult{}, err
+	}
+	if err := numericIDs("language_id", args.LanguageIDs); err != nil {
+		return WriteResult{}, err
+	}
 	for _, geoID := range args.GeoTargetIDs {
 		ops = append(ops, campaignLocationCriterion(campaignResource, geoID))
 	}
@@ -160,6 +188,9 @@ func runUpdateCampaign(ctx context.Context, c *Client, args UpdateCampaignArgs) 
 		return WriteResult{}, fmt.Errorf("no changes specified for campaign update")
 	}
 	summary := fmt.Sprintf("Update campaign %s (%d operation(s))", args.CampaignID, len(ops))
+	if doubleConfirm {
+		return previewMutateDouble(tool, cid, summary, ops)
+	}
 	return previewMutate(tool, cid, summary, ops)
 }
 

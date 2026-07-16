@@ -75,6 +75,18 @@ func runCreatePmaxCampaign(ctx context.Context, c *Client, args CreatePmaxArgs) 
 	}
 
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if args.CampaignName == "" {
+		return WriteResult{}, fmt.Errorf("campaign_name is required")
+	}
+	if args.DailyBudget <= 0 {
+		return WriteResult{}, fmt.Errorf("daily_budget must be positive (currency units)")
+	}
+	if err := numericIDs("geo_target_id", args.GeoTargetIDs); err != nil {
+		return WriteResult{}, err
+	}
 	paused := true
 	if args.StartPaused != nil {
 		paused = *args.StartPaused

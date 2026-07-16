@@ -158,6 +158,12 @@ func runDraftAppAd(ctx context.Context, c *Client, args DraftAppAdArgs) (WriteRe
 		appAd["youtubeVideos"] = assetRefs(args.YouTubeVideoAssets)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
+		return WriteResult{}, err
+	}
 	op := map[string]any{
 		"adGroupAdOperation": map[string]any{
 			"create": map[string]any{

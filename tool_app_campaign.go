@@ -101,6 +101,15 @@ func runCreateAppCampaign(ctx context.Context, c *Client, args CreateAppCampaign
 	}
 
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if err := numericIDs("geo_target_id", args.GeoTargetIDs); err != nil {
+		return WriteResult{}, err
+	}
+	if err := numericIDs("language_id", args.LanguageIDs); err != nil {
+		return WriteResult{}, err
+	}
 	budgetResource := fmt.Sprintf("customers/%s/campaignBudgets/-1", cid)
 	campaignResource := fmt.Sprintf("customers/%s/campaigns/-2", cid)
 	adGroupResource := fmt.Sprintf("customers/%s/adGroups/-3", cid)

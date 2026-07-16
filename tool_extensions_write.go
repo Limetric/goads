@@ -58,6 +58,12 @@ func runDraftSitelinks(ctx context.Context, c *Client, args DraftSitelinksArgs) 
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
 	campaignResource := fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID)
 	var ops []any
 	for i, sl := range args.Sitelinks {
@@ -109,6 +115,12 @@ func runCreateCallouts(ctx context.Context, c *Client, args CreateCalloutsArgs) 
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
 	campaignResource := fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID)
 	var ops []any
 	for i, co := range args.Callouts {
@@ -169,6 +181,12 @@ func runCreateStructuredSnippets(ctx context.Context, c *Client, args CreateSnip
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
 	campaignResource := fmt.Sprintf("customers/%s/campaigns/%s", cid, args.CampaignID)
 	assetResource := tempAssetResource(cid, -300)
 	ops := []any{
@@ -207,6 +225,15 @@ func runRemoveExtension(ctx context.Context, c *Client, args RemoveExtensionArgs
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
+		return WriteResult{}, err
+	}
+	if _, err := numericID("asset_id", args.AssetID); err != nil {
+		return WriteResult{}, err
+	}
 	resource := fmt.Sprintf("customers/%s/campaignAssets/%s~%s~%s", cid, args.CampaignID, args.AssetID, args.FieldType)
 	op := map[string]any{"campaignAssetOperation": map[string]any{"remove": resource}}
 	summary := fmt.Sprintf("REMOVE %s extension (asset %s) from campaign %s — destructive", args.FieldType, args.AssetID, args.CampaignID)
