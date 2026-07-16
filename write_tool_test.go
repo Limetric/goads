@@ -148,3 +148,28 @@ func TestApplyConfirmed_RejectsPartialFailure(t *testing.T) {
 		t.Fatalf("expected partial failure error, got %v", err)
 	}
 }
+
+func TestApplyConfirmed_RejectsTokenFromOtherTool(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	// Stage as remove_entity, try to confirm through enable_entity: the token
+	// must be rejected and the staged operation discarded (issue #6).
+	op := map[string]any{"campaignOperation": map[string]any{"remove": "customers/1/campaigns/2"}}
+	prev, err := previewMutate("remove_entity", "1", "remove campaign 2", []any{op})
+	if err != nil {
+		t.Fatalf("previewMutate: %v", err)
+	}
+	if _, err := applyConfirmed(t.Context(), c, "enable_entity", prev.Token); err == nil || !strings.Contains(err.Error(), "remove_entity") {
+		t.Fatalf("expected tool-mismatch error naming the staging tool, got %v", err)
+	}
+	if cap.calls != 0 {
+		t.Fatal("mismatched confirm must not reach the API")
+	}
+	// Single-use even on mismatch: the right tool can't redeem it either now.
+	if _, err := applyConfirmed(t.Context(), c, "remove_entity", prev.Token); err == nil {
+		t.Fatal("token should have been consumed by the mismatched attempt")
+	}
+}

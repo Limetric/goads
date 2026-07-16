@@ -1,7 +1,9 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -66,5 +68,77 @@ func TestConfirmFlow_Expired(t *testing.T) {
 	// affect it; instead verify the TTL boundary logic directly.
 	if time.Since(p.CreatedAt) <= confirmTTL {
 		t.Fatal("test setup: expected an expired timestamp")
+	}
+}
+
+func TestConsumeMutation_RejectsMalformedTokens(t *testing.T) {
+	useTempState(t)
+	// A token is caller-supplied input; anything not shaped like a generated
+	// token must be rejected before touching the filesystem (issue #6).
+	for _, tok := range []string{
+		"../../../etc/passwd",
+		"x/../../secrets",
+		"DEADBEEFDEADBEEF",  // uppercase — newToken emits lowercase only
+		"abcd",              // too short
+		"0123456789abcdef0", // too long
+		"0123456789abcdeg",  // non-hex
+	} {
+		if _, err := consumeMutation(tok); err == nil {
+			t.Errorf("token %q should be rejected", tok)
+		}
+	}
+}
+
+func TestConsumeMutation_PathTraversalNeverTouchesFiles(t *testing.T) {
+	useTempState(t)
+	dir, err := stateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Plant a JSON file outside the expected token namespace; a traversal
+	// token used to be able to read and DELETE it.
+	victim := filepath.Join(dir, "victim.json")
+	if err := os.WriteFile(victim, []byte(`{"token":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	traversal := strings.TrimSuffix(strings.TrimPrefix(victim, dir+string(os.PathSeparator)), ".json")
+	if _, err := consumeMutation("x/../" + traversal); err == nil {
+		t.Fatal("traversal token should be rejected")
+	}
+	if _, err := os.Stat(victim); err != nil {
+		t.Fatalf("victim file must be untouched: %v", err)
+	}
+}
+
+func TestStageMutation_FailsWithoutStateDir(t *testing.T) {
+	// No usable config dir → staging must fail loudly instead of handing out
+	// a token that can never be confirmed (issue #6).
+	t.Setenv("HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("APPDATA", "")
+	if _, err := stageMutation("t", "1", "s", nil); err == nil {
+		t.Fatal("expected staging to fail without a state dir")
+	}
+}
+
+func TestStageMutation_SweepsExpiredPendingFiles(t *testing.T) {
+	useTempState(t)
+	dir, err := stateDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(dir, "pending-00000000deadbeef.json")
+	if err := os.WriteFile(stale, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-2 * confirmTTL)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := stageMutation("t", "1", "s", nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("expired pending file should have been swept, stat err = %v", err)
 	}
 }

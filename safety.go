@@ -73,16 +73,58 @@ func stageDispatch(tool, customerID, summary, dispatch string, ops []any, resour
 	}
 	dir, err := stateDir()
 	if err != nil {
-		// No persistent state: still return the staged mutation so the MCP
-		// in-process path (which keeps it in memory) can use it; the CLI path
-		// will report that confirmation persistence is unavailable.
-		return p, nil
+		// Fail loudly: the token store is disk-backed only, so a token staged
+		// without persistence could never be confirmed — handing one out would
+		// promise an apply that must fail (issue #6).
+		return nil, fmt.Errorf("confirmation store unavailable (%v) — writes need a usable config directory; set HOME/XDG_CONFIG_HOME", err)
 	}
-	data, _ := json.MarshalIndent(p, "", "  ")
+	sweepExpired(dir)
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("stage confirmation: %w", err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "pending-"+tok+".json"), data, 0o600); err != nil {
 		return nil, fmt.Errorf("stage confirmation: %w", err)
 	}
 	return p, nil
+}
+
+// sweepExpired removes pending files past their TTL so abandoned previews
+// don't accumulate in the state dir forever. Best-effort.
+func sweepExpired(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range entries {
+		name := e.Name()
+		if !strings.HasPrefix(name, "pending-") || !strings.HasSuffix(name, ".json") {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if time.Since(info.ModTime()) > confirmTTL {
+			_ = os.Remove(filepath.Join(dir, name))
+		}
+	}
+}
+
+// validToken reports whether s has the exact shape newToken generates
+// (16 lowercase hex chars). Anything else is rejected before it can reach the
+// filesystem — the token is caller-supplied input and must never influence
+// which path is read or removed (issue #6).
+func validToken(s string) bool {
+	if len(s) != 16 {
+		return false
+	}
+	for _, r := range s {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 // consumeMutation loads and deletes a pending mutation by token, rejecting
@@ -92,20 +134,31 @@ func consumeMutation(token string) (*PendingMutation, error) {
 	if token == "" {
 		return nil, fmt.Errorf("no confirmation token provided")
 	}
+	if !validToken(token) {
+		return nil, fmt.Errorf("malformed confirmation token %q — expected the 16-character token from the preview", token)
+	}
 	dir, err := stateDir()
 	if err != nil {
 		return nil, fmt.Errorf("confirmation store unavailable: %w", err)
 	}
 	path := filepath.Join(dir, "pending-"+token+".json")
-	data, err := os.ReadFile(path)
-	if err != nil {
+	// Claim the pending file atomically before reading: two concurrent
+	// confirms must not both apply the same staged mutation (issue #6). Only
+	// the rename winner proceeds; the file stays single-use even if the apply
+	// later fails.
+	claimed := path + ".claimed"
+	if err := os.Rename(path, claimed); err != nil {
 		return nil, fmt.Errorf("unknown or already-used confirmation token %q", token)
+	}
+	data, err := os.ReadFile(claimed)
+	_ = os.Remove(claimed)
+	if err != nil {
+		return nil, fmt.Errorf("read confirmation %q: %w", token, err)
 	}
 	var p PendingMutation
 	if err := json.Unmarshal(data, &p); err != nil {
 		return nil, fmt.Errorf("corrupt confirmation %q: %w", token, err)
 	}
-	_ = os.Remove(path) // single-use, even on later failure
 	if time.Since(p.CreatedAt) > confirmTTL {
 		return nil, fmt.Errorf("confirmation token %q expired (valid for %s); re-run the command to get a fresh one", token, confirmTTL)
 	}

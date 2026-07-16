@@ -74,6 +74,11 @@ func applyConfirmed(ctx context.Context, c *Client, tool, confirm string) (Write
 	if err != nil {
 		return WriteResult{}, err
 	}
+	// A token is bound to the tool that staged it: confirming a remove_entity
+	// preview through enable_entity must not execute the removal (issue #6).
+	if p.Tool != tool {
+		return WriteResult{}, fmt.Errorf("confirmation token was issued by %q, not %q — the staged operation (%s) has been discarded; re-run the original command for a fresh preview", p.Tool, tool, p.Summary)
+	}
 	outcome, err := applyPending(ctx, c, p)
 	if err != nil {
 		auditLog(p, false)
