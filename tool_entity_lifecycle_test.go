@@ -1,6 +1,23 @@
 package main
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+
+	"github.com/spf13/pflag"
+)
+
+// resetPauseCmd clears the pause command's shared flag state so CLI tests
+// don't leak values (or cobra's required-flag "Changed" marks) into each other.
+func resetPauseCmd(t *testing.T) {
+	t.Cleanup(func() {
+		pauseArgs = EntityActionArgs{}
+		pauseCmd.Flags().VisitAll(func(f *pflag.Flag) {
+			f.Changed = false
+			_ = f.Value.Set(f.DefValue)
+		})
+	})
+}
 
 func TestEntityResourceAndOp(t *testing.T) {
 	cases := []struct {
@@ -92,5 +109,44 @@ func TestEntityActions_Blocked(t *testing.T) {
 func TestEntityActions_InvalidType(t *testing.T) {
 	if _, err := runPauseEntity(t.Context(), nil, EntityActionArgs{CustomerID: "1", EntityType: "nope", EntityID: "5"}); err == nil {
 		t.Fatal("expected error for invalid entity type")
+	}
+}
+
+func TestCLI_PauseCommand_PreviewThenApply(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	t.Setenv("GOOGLE_ADS_API_BASE_URL", srv.URL) // non-prod → skips OAuth/creds
+	resetPauseCmd(t)
+
+	out, err := runCLI(t, "pause", "--customer-id", "1", "--type", "campaign", "--id", "42")
+	if err != nil {
+		t.Fatalf("execute pause preview: %v\noutput: %s", err, out)
+	}
+	var prev WriteResult
+	if err := json.Unmarshal([]byte(out), &prev); err != nil {
+		t.Fatalf("pause output is not JSON: %v\noutput: %s", err, out)
+	}
+	if prev.Applied || prev.Token == "" || cap.calls != 0 {
+		t.Fatalf("preview should stage without mutating: %+v calls=%d", prev, cap.calls)
+	}
+
+	out, err = runCLI(t, "pause", "--customer-id", "1", "--type", "campaign", "--id", "42", "--confirm", prev.Token)
+	if err != nil {
+		t.Fatalf("execute pause apply: %v\noutput: %s", err, out)
+	}
+	if cap.calls != 1 {
+		t.Fatalf("apply should mutate exactly once, got %d calls", cap.calls)
+	}
+	upd := opUpdate(t, cap.firstOp(t), "campaignOperation")
+	if upd["status"] != "PAUSED" || upd["resourceName"] != "customers/1/campaigns/42" {
+		t.Errorf("unexpected update op: %v", upd)
+	}
+}
+
+func TestCLI_PauseRequiresFlags(t *testing.T) {
+	resetPauseCmd(t)
+	if out, err := runCLI(t, "pause", "--customer-id", "1"); err == nil {
+		t.Fatalf("pause without --type/--id should fail; output: %s", out)
 	}
 }
