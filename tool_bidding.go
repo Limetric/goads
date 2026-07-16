@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strconv"
 
 	"github.com/spf13/cobra"
 )
@@ -81,17 +83,33 @@ func runUpdateKeywordBid(ctx context.Context, c *Client, args UpdateKeywordBidAr
 	if err := checkBlockedOperation(tool, cfg); err != nil {
 		return WriteResult{}, toolError(tool, err)
 	}
-	if err := checkBidIncrease(args.CurrentBid, args.NewBid, cfg); err != nil {
-		return WriteResult{}, toolError(tool, err)
-	}
-	if args.AdGroupID == "" || args.CriterionID == "" {
-		return WriteResult{}, fmt.Errorf("ad_group_id and criterion_id are required")
-	}
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
-	resource := fmt.Sprintf("customers/%s/adGroupCriteria/%s~%s", cid, args.AdGroupID, args.CriterionID)
+	adGroupID, err := numericID("ad_group_id", args.AdGroupID)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	criterionID, err := numericID("criterion_id", args.CriterionID)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	// The bid-increase guard needs a trustworthy baseline. A caller-supplied
+	// current_bid of 0 used to mean "no baseline, always allowed", so simply
+	// omitting it bypassed the guard — fetch the real bid instead (issue #12).
+	baseline := args.CurrentBid
+	if baseline <= 0 {
+		fetched, err := fetchCurrentKeywordBid(ctx, c, cid, adGroupID, criterionID)
+		if err != nil {
+			return WriteResult{}, toolError(tool, fmt.Errorf("could not verify the current bid for the bid-increase guard: %w — pass current_bid explicitly if the keyword has no bid yet", err))
+		}
+		baseline = fetched
+	}
+	if err := checkBidIncrease(baseline, args.NewBid, cfg); err != nil {
+		return WriteResult{}, toolError(tool, err)
+	}
+	resource := fmt.Sprintf("customers/%s/adGroupCriteria/%s~%s", cid, adGroupID, criterionID)
 	op := map[string]any{
 		"adGroupCriterionOperation": map[string]any{
 			"update":     map[string]any{"resourceName": resource, "cpcBidMicros": microsString(dollarsToMicros(args.NewBid))},
@@ -100,6 +118,41 @@ func runUpdateKeywordBid(ctx context.Context, c *Client, args UpdateKeywordBidAr
 	}
 	summary := fmt.Sprintf("Update keyword %s~%s CPC bid to %.2f", args.AdGroupID, args.CriterionID, args.NewBid)
 	return previewMutate(tool, cid, summary, []any{op})
+}
+
+// fetchCurrentKeywordBid looks up a keyword's current CPC bid in currency
+// units. A result of 0 with a nil error means the keyword has no explicit bid
+// (no baseline for the guard).
+func fetchCurrentKeywordBid(ctx context.Context, c *Client, customerID, adGroupID, criterionID string) (float64, error) {
+	q := fmt.Sprintf("SELECT ad_group_criterion.cpc_bid_micros FROM ad_group_criterion WHERE ad_group.id = %s AND ad_group_criterion.criterion_id = %s", adGroupID, criterionID)
+	rows, err := c.Search(ctx, customerID, q)
+	if err != nil {
+		return 0, err
+	}
+	if len(rows) == 0 {
+		return 0, nil
+	}
+	var row struct {
+		AdGroupCriterion struct {
+			// REST serializes int64 as a JSON string; tolerate numbers too.
+			CpcBidMicros any `json:"cpcBidMicros"`
+		} `json:"adGroupCriterion"`
+	}
+	if err := json.Unmarshal(rows[0], &row); err != nil {
+		return 0, nil
+	}
+	switch v := row.AdGroupCriterion.CpcBidMicros.(type) {
+	case string:
+		micros, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, nil
+		}
+		return float64(micros) / 1_000_000.0, nil
+	case float64:
+		return v / 1_000_000.0, nil
+	default:
+		return 0, nil
+	}
 }
 
 // --- CLI front-end ---

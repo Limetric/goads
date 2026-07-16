@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"strings"
 	"testing"
 )
@@ -140,5 +141,24 @@ func TestLoadSafetyConfigFromEnv(t *testing.T) {
 	}
 	if len(cfg.BlockedOperations) != 2 || cfg.BlockedOperations[0] != "delete_campaign" || cfg.BlockedOperations[1] != "remove_ad" {
 		t.Errorf("blocked ops parse failed: %v", cfg.BlockedOperations)
+	}
+}
+
+func TestLoadSafetyConfig_RejectsBogusOverrides(t *testing.T) {
+	// NaN would disable the cap entirely (x > NaN is always false) and
+	// negative caps are meaningless — both must keep the default (issue #12).
+	for _, v := range []string{"NaN", "-5", "0", "Inf", "banana"} {
+		t.Setenv("GOOGLE_ADS_MAX_DAILY_BUDGET", v)
+		t.Setenv("GOOGLE_ADS_MAX_BID_INCREASE_PCT", v)
+		cfg := loadSafetyConfig()
+		if cfg.MaxDailyBudget != 50.0 || cfg.MaxBidIncreasePct != 100 {
+			t.Errorf("override %q should keep defaults, got %+v", v, cfg)
+		}
+	}
+}
+
+func TestCheckBudgetCap_RejectsNaN(t *testing.T) {
+	if err := checkBudgetCap(math.NaN(), defaultSafetyConfig()); err == nil {
+		t.Fatal("NaN budget should be rejected")
 	}
 }

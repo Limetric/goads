@@ -47,6 +47,11 @@ type PendingMutation struct {
 	// recommendation dispatches (unused for the default mutate path).
 	ResourceNames []string  `json:"resource_names,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
+	// RequiresDouble marks destructive operations that need a second
+	// confirmation (issue #12). DoubleConfirmed is set once the first confirm
+	// has been consumed and the mutation re-staged under a fresh token.
+	RequiresDouble  bool `json:"requires_double,omitempty"`
+	DoubleConfirmed bool `json:"double_confirmed,omitempty"`
 }
 
 // stageMutation persists a pending googleAds:mutate and returns its confirm token.
@@ -62,14 +67,15 @@ func stageDispatch(tool, customerID, summary, dispatch string, ops []any, resour
 		return nil, err
 	}
 	p := &PendingMutation{
-		Token:         tok,
-		Tool:          tool,
-		CustomerID:    customerID,
-		Summary:       summary,
-		Operations:    ops,
-		Dispatch:      dispatch,
-		ResourceNames: resourceNames,
-		CreatedAt:     time.Now().UTC(),
+		Token:          tok,
+		Tool:           tool,
+		CustomerID:     customerID,
+		Summary:        summary,
+		Operations:     ops,
+		Dispatch:       dispatch,
+		ResourceNames:  resourceNames,
+		CreatedAt:      time.Now().UTC(),
+		RequiresDouble: requiresDoubleConfirmation(tool, nil, nil),
 	}
 	dir, err := stateDir()
 	if err != nil {
@@ -163,6 +169,30 @@ func consumeMutation(token string) (*PendingMutation, error) {
 		return nil, fmt.Errorf("confirmation token %q expired (valid for %s); re-run the command to get a fresh one", token, confirmTTL)
 	}
 	return &p, nil
+}
+
+// restageForDoubleConfirm re-stages a consumed destructive mutation under a
+// fresh token that must be confirmed once more before it applies (issue #12).
+func restageForDoubleConfirm(p *PendingMutation) (*PendingMutation, error) {
+	tok, err := newToken()
+	if err != nil {
+		return nil, err
+	}
+	p.Token = tok
+	p.DoubleConfirmed = true
+	p.CreatedAt = time.Now().UTC()
+	dir, err := stateDir()
+	if err != nil {
+		return nil, fmt.Errorf("confirmation store unavailable: %w", err)
+	}
+	data, err := json.MarshalIndent(p, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("stage second confirmation: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "pending-"+tok+".json"), data, 0o600); err != nil {
+		return nil, fmt.Errorf("stage second confirmation: %w", err)
+	}
+	return p, nil
 }
 
 // applyPending executes a consumed pending write via the endpoint selected by

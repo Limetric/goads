@@ -44,6 +44,42 @@ func dateClause(start, end string) string {
 	return fmt.Sprintf("segments.date BETWEEN '%s' AND '%s'", start, end)
 }
 
+// validGAQLDate reports whether s is a YYYY-MM-DD date literal. Date args are
+// caller-supplied and interpolated into GAQL, so anything else is rejected
+// before it reaches a query (issue #13).
+func validGAQLDate(s string) bool {
+	if len(s) != 10 || s[4] != '-' || s[7] != '-' {
+		return false
+	}
+	for i, r := range s {
+		if i == 4 || i == 7 {
+			continue
+		}
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// dateRangeClause builds the segments.date WHERE fragment shared by the
+// metrics read tools: an explicit validated range when both dates are set,
+// LAST_30_DAYS when neither is. A single-ended range errors — it used to be
+// silently ignored, returning data for a window the user didn't ask for
+// (issue #13).
+func dateRangeClause(start, end string) (string, error) {
+	switch {
+	case start == "" && end == "":
+		return "segments.date DURING LAST_30_DAYS", nil
+	case start == "" || end == "":
+		return "", fmt.Errorf("date_start and date_end must both be set (got start=%q, end=%q)", start, end)
+	}
+	if !validGAQLDate(start) || !validGAQLDate(end) {
+		return "", fmt.Errorf("dates must be YYYY-MM-DD (got start=%q, end=%q)", start, end)
+	}
+	return dateClause(start, end), nil
+}
+
 // decodeRow decodes a raw result row into a generic value, keeping numbers as
 // json.Number so re-marshaling preserves their original representation (large
 // IDs never get rewritten in scientific notation).

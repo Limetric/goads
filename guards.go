@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"strconv"
 	"strings"
@@ -26,18 +27,16 @@ func defaultSafetyConfig() SafetyConfig {
 }
 
 // loadSafetyConfig builds a SafetyConfig from the environment, falling back to
-// the built-in defaults for anything unset or unparseable.
+// the built-in defaults for anything unset or unparseable. Only finite,
+// positive overrides are accepted: NaN would disable a cap entirely (x > NaN
+// is always false) and a negative cap is meaningless (issue #12).
 func loadSafetyConfig() SafetyConfig {
 	cfg := defaultSafetyConfig()
-	if v := strings.TrimSpace(os.Getenv("GOOGLE_ADS_MAX_DAILY_BUDGET")); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			cfg.MaxDailyBudget = f
-		}
+	if f, ok := parseGuardValue(os.Getenv("GOOGLE_ADS_MAX_DAILY_BUDGET")); ok {
+		cfg.MaxDailyBudget = f
 	}
-	if v := strings.TrimSpace(os.Getenv("GOOGLE_ADS_MAX_BID_INCREASE_PCT")); v != "" {
-		if f, err := strconv.ParseFloat(v, 64); err == nil {
-			cfg.MaxBidIncreasePct = f
-		}
+	if f, ok := parseGuardValue(os.Getenv("GOOGLE_ADS_MAX_BID_INCREASE_PCT")); ok {
+		cfg.MaxBidIncreasePct = f
 	}
 	if v := strings.TrimSpace(os.Getenv("GOOGLE_ADS_BLOCKED_OPS")); v != "" {
 		for _, p := range strings.Split(v, ",") {
@@ -49,9 +48,24 @@ func loadSafetyConfig() SafetyConfig {
 	return cfg
 }
 
+// parseGuardValue parses a guard override from the environment, accepting only
+// finite positive values.
+func parseGuardValue(v string) (float64, bool) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return 0, false
+	}
+	f, err := strconv.ParseFloat(v, 64)
+	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) || f <= 0 {
+		return 0, false
+	}
+	return f, true
+}
+
 // checkBudgetCap rejects a proposed daily budget above the configured maximum.
+// The comparison is written so a NaN budget also fails.
 func checkBudgetCap(dailyBudget float64, cfg SafetyConfig) error {
-	if dailyBudget > cfg.MaxDailyBudget {
+	if !(dailyBudget <= cfg.MaxDailyBudget) {
 		return fmt.Errorf("daily budget %.2f exceeds maximum %.2f (raise GOOGLE_ADS_MAX_DAILY_BUDGET to allow)", dailyBudget, cfg.MaxDailyBudget)
 	}
 	return nil

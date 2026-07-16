@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -42,16 +43,35 @@ func runDraftKeywords(ctx context.Context, c *Client, args DraftKeywordsArgs) (W
 	if len(args.Keywords) == 0 {
 		return WriteResult{}, fmt.Errorf("at least one keyword is required")
 	}
+	hasBroad := false
 	for _, kw := range args.Keywords {
 		if err := validateMatchType(kw.MatchType); err != nil {
 			return WriteResult{}, err
 		}
+		hasBroad = hasBroad || kw.MatchType == "BROAD"
 	}
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 	cid := normalizeCustomerID(args.CustomerID)
-	adGroupResource := fmt.Sprintf("customers/%s/adGroups/%s", cid, args.AdGroupID)
+	if cid == "" {
+		return WriteResult{}, fmt.Errorf("customer_id is required")
+	}
+	adGroupID, err := numericID("ad_group_id", args.AdGroupID)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	// Guard: BROAD match keywords into a MANUAL_CPC campaign burn budget. The
+	// campaign's strategy is looked up from the ad group; when it cannot be
+	// determined the guard does not block (issue #12).
+	if hasBroad {
+		if strategy := campaignBiddingStrategyForAdGroup(ctx, c, cid, adGroupID); strategy != "" {
+			if err := checkBroadManualCPC("BROAD", strategy); err != nil {
+				return WriteResult{}, toolError(tool, err)
+			}
+		}
+	}
+	adGroupResource := fmt.Sprintf("customers/%s/adGroups/%s", cid, adGroupID)
 	ops := make([]any, len(args.Keywords))
 	for i, kw := range args.Keywords {
 		ops[i] = map[string]any{
@@ -65,6 +85,29 @@ func runDraftKeywords(ctx context.Context, c *Client, args DraftKeywordsArgs) (W
 	}
 	summary := fmt.Sprintf("Add %d keyword(s) to ad group %s", len(args.Keywords), args.AdGroupID)
 	return previewMutate(tool, cid, summary, ops)
+}
+
+// campaignBiddingStrategyForAdGroup looks up the bidding strategy type of the
+// campaign that owns an ad group. Best-effort: returns "" when it cannot be
+// determined (the guard then does not block).
+func campaignBiddingStrategyForAdGroup(ctx context.Context, c *Client, customerID, adGroupID string) string {
+	if c == nil {
+		return ""
+	}
+	q := fmt.Sprintf("SELECT campaign.bidding_strategy_type FROM ad_group WHERE ad_group.id = %s", adGroupID)
+	rows, err := c.Search(ctx, customerID, q)
+	if err != nil || len(rows) == 0 {
+		return ""
+	}
+	var row struct {
+		Campaign struct {
+			BiddingStrategyType string `json:"biddingStrategyType"`
+		} `json:"campaign"`
+	}
+	if json.Unmarshal(rows[0], &row) != nil {
+		return ""
+	}
+	return row.Campaign.BiddingStrategyType
 }
 
 // AddNegativeKeywordsArgs adds campaign-level negative keywords.

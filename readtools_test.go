@@ -45,15 +45,31 @@ func TestAndDateClause(t *testing.T) {
 		name       string
 		start, end string
 		want       string
+		wantErr    bool
 	}{
 		{name: "default", want: " AND segments.date DURING LAST_30_DAYS"},
 		{name: "explicit range", start: "2024-01-01", end: "2024-01-31", want: " AND segments.date BETWEEN '2024-01-01' AND '2024-01-31'"},
-		{name: "start only", start: "2024-01-01", want: " AND segments.date DURING LAST_30_DAYS"},
-		{name: "end only", end: "2024-01-31", want: " AND segments.date DURING LAST_30_DAYS"},
+		// A single-ended range used to be silently ignored, returning data for
+		// a window the user didn't ask for (issue #13).
+		{name: "start only errors", start: "2024-01-01", wantErr: true},
+		{name: "end only errors", end: "2024-01-31", wantErr: true},
+		// Dates are interpolated into GAQL and must be well-formed.
+		{name: "malformed start errors", start: "01/01/2024", end: "2024-01-31", wantErr: true},
+		{name: "injection attempt errors", start: "2024-01-01", end: "2024-01-31' OR '1'='1", wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := andDateClause(tt.start, tt.end); got != tt.want {
+			got, err := andDateClause(tt.start, tt.end)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("andDateClause(%q, %q) should error, got %q", tt.start, tt.end, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("andDateClause(%q, %q): %v", tt.start, tt.end, err)
+			}
+			if got != tt.want {
 				t.Errorf("andDateClause(%q, %q) = %q, want %q", tt.start, tt.end, got, tt.want)
 			}
 		})

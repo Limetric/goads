@@ -28,13 +28,17 @@ func runKeywordPerformance(ctx context.Context, c *Client, args KeywordPerforman
 	if args.CustomerID == "" {
 		return KeywordPerformanceResult{}, fmt.Errorf("customer_id is required")
 	}
+	dates, err := andDateClause(args.DateStart, args.DateEnd)
+	if err != nil {
+		return KeywordPerformanceResult{}, err
+	}
 	query := "SELECT " +
 		"campaign.name, ad_group.name, ad_group_criterion.keyword.text, " +
 		"ad_group_criterion.keyword.match_type, ad_group_criterion.quality_info.quality_score, " +
 		"metrics.impressions, metrics.clicks, metrics.ctr, metrics.average_cpc, " +
 		"metrics.cost_micros, metrics.conversions " +
 		"FROM keyword_view WHERE ad_group_criterion.status != 'REMOVED'" +
-		andDateClause(args.DateStart, args.DateEnd) +
+		dates +
 		" ORDER BY metrics.cost_micros DESC"
 
 	rows, err := c.Search(ctx, args.CustomerID, query)
@@ -62,9 +66,9 @@ func runSearchTerms(ctx context.Context, c *Client, args SearchTermsArgs) (Searc
 	if args.CustomerID == "" {
 		return SearchTermsResult{}, fmt.Errorf("customer_id is required")
 	}
-	where := "segments.date DURING LAST_30_DAYS"
-	if args.DateStart != "" && args.DateEnd != "" {
-		where = dateClause(args.DateStart, args.DateEnd)
+	where, err := dateRangeClause(args.DateStart, args.DateEnd)
+	if err != nil {
+		return SearchTermsResult{}, err
 	}
 	query := "SELECT " +
 		"search_term_view.search_term, campaign.name, ad_group.name, " +

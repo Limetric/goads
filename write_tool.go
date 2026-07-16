@@ -79,6 +79,20 @@ func applyConfirmed(ctx context.Context, c *Client, tool, confirm string) (Write
 	if p.Tool != tool {
 		return WriteResult{}, fmt.Errorf("confirmation token was issued by %q, not %q — the staged operation (%s) has been discarded; re-run the original command for a fresh preview", p.Tool, tool, p.Summary)
 	}
+	// Destructive operations take two confirmations: the first consume
+	// re-stages under a fresh token instead of applying (issue #12).
+	if p.RequiresDouble && !p.DoubleConfirmed {
+		p2, err := restageForDoubleConfirm(p)
+		if err != nil {
+			return WriteResult{}, err
+		}
+		return WriteResult{
+			Applied: false,
+			Token:   p2.Token,
+			Preview: p2.previewText() + "\nDESTRUCTIVE operation — a second confirmation is required. Re-run with the token above to apply.",
+			Detail:  "second confirmation required",
+		}, nil
+	}
 	outcome, err := applyPending(ctx, c, p)
 	if err != nil {
 		auditLog(p, false)

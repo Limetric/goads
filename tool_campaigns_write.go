@@ -88,6 +88,10 @@ func runDraftCampaign(ctx context.Context, c *Client, args DraftCampaignArgs) (W
 		if err := validateMatchType(kw.MatchType); err != nil {
 			return WriteResult{}, err
 		}
+		// Guard: BROAD match keywords in a MANUAL_CPC campaign burn budget.
+		if err := checkBroadManualCPC(kw.MatchType, args.BiddingStrategy); err != nil {
+			return WriteResult{}, toolError(tool, err)
+		}
 	}
 	status, err := parseAdStatus(args.Status)
 	if err != nil {

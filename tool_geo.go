@@ -30,8 +30,10 @@ func runGeoTargets(ctx context.Context, c *Client, args GeoTargetsArgs) (GeoTarg
 	if strings.TrimSpace(args.Query) == "" {
 		return GeoTargetsResult{}, fmt.Errorf("query is required")
 	}
-	// LIKE pattern: escape single quotes so the literal stays well-formed.
-	pattern := strings.ReplaceAll(args.Query, "'", `\'`)
+	// LIKE pattern: escape backslashes and single quotes so the literal stays
+	// well-formed — escaping only quotes let a trailing backslash break out of
+	// the string (issue #13).
+	pattern := escapeGAQLString(args.Query)
 	query := "SELECT " +
 		"geo_target_constant.id, geo_target_constant.name, " +
 		"geo_target_constant.canonical_name, geo_target_constant.country_code, " +
@@ -62,9 +64,9 @@ func runGeoPerformance(ctx context.Context, c *Client, args GeoPerformanceArgs) 
 	if args.CustomerID == "" {
 		return GeoPerformanceResult{}, fmt.Errorf("customer_id is required")
 	}
-	where := "segments.date DURING LAST_30_DAYS"
-	if args.DateStart != "" && args.DateEnd != "" {
-		where = dateClause(args.DateStart, args.DateEnd)
+	where, err := dateRangeClause(args.DateStart, args.DateEnd)
+	if err != nil {
+		return GeoPerformanceResult{}, err
 	}
 	query := "SELECT " +
 		"campaign.name, geographic_view.country_criterion_id, geographic_view.location_type, " +

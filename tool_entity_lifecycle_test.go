@@ -88,7 +88,20 @@ func TestRemoveEntity_UsesRemoveOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
+	// Destructive ops take two confirmations (issue #12): the first confirm
+	// re-stages under a fresh token instead of applying.
 	args.Confirm = prev.Token
+	second, err := runRemoveEntity(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("first confirm: %v", err)
+	}
+	if second.Applied || second.Token == "" || second.Token == prev.Token {
+		t.Fatalf("first confirm should re-stage with a fresh token: %+v", second)
+	}
+	if cap.calls != 0 {
+		t.Fatalf("first confirm of a destructive op must not mutate (calls=%d)", cap.calls)
+	}
+	args.Confirm = second.Token
 	if _, err := runRemoveEntity(t.Context(), c, args); err != nil {
 		t.Fatalf("apply: %v", err)
 	}

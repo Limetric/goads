@@ -60,7 +60,7 @@ func runKeywordForecasts(ctx context.Context, c *Client, args KeywordForecastsAr
 
 	quoted := make([]string, len(args.KeywordTexts))
 	for i, kw := range args.KeywordTexts {
-		quoted[i] = "'" + strings.ReplaceAll(kw, "'", `\'`) + "'"
+		quoted[i] = quoteGAQLString(kw)
 	}
 	query := "SELECT " +
 		"ad_group_criterion.keyword.text, metrics.average_cpc, metrics.impressions, " +

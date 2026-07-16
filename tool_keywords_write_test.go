@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestDraftKeywords_PreviewThenApply(t *testing.T) {
 	useTempState(t)
@@ -71,7 +76,13 @@ func TestRemoveKeywords_UsesRemoveOp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
+	// Destructive: first confirm re-stages (issue #12), second applies.
 	args.Confirm = prev.Token
+	second, err := runRemoveKeywords(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("first confirm: %v", err)
+	}
+	args.Confirm = second.Token
 	if _, err := runRemoveKeywords(t.Context(), c, args); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -90,7 +101,13 @@ func TestRemoveNegativeKeywords_UsesCampaignCriteria(t *testing.T) {
 
 	args := RemoveNegativeKeywordsArgs{CustomerID: "1", CampaignID: "5", CriterionIDs: []string{"99"}}
 	prev, _ := runRemoveNegativeKeywords(t.Context(), c, args)
+	// Destructive: first confirm re-stages (issue #12), second applies.
 	args.Confirm = prev.Token
+	second, err := runRemoveNegativeKeywords(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("first confirm: %v", err)
+	}
+	args.Confirm = second.Token
 	if _, err := runRemoveNegativeKeywords(t.Context(), c, args); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -115,5 +132,37 @@ func TestParseKeywordFlag(t *testing.T) {
 	}
 	if kw := parseKeywordFlag("running shoes"); kw.MatchType != "BROAD" {
 		t.Errorf("default match type should be BROAD: %+v", kw)
+	}
+}
+
+func TestDraftKeywords_BlocksBroadIntoManualCPCCampaign(t *testing.T) {
+	useTempState(t)
+	// The campaign's strategy is looked up from the ad group; BROAD keywords
+	// into a MANUAL_CPC campaign must be blocked (issue #12).
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "googleAds:search") {
+			_, _ = w.Write([]byte(`{"results":[{"campaign":{"biddingStrategyType":"MANUAL_CPC"}}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"results":[{}]}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	_, err := runDraftKeywords(t.Context(), c, DraftKeywordsArgs{
+		CustomerID: "1", AdGroupID: "10",
+		Keywords: []KeywordWithMatchType{{Text: "shoes", MatchType: "BROAD"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "BROAD") {
+		t.Fatalf("expected the BROAD+MANUAL_CPC guard to block, got %v", err)
+	}
+
+	// EXACT keywords into the same campaign are fine.
+	if _, err := runDraftKeywords(t.Context(), c, DraftKeywordsArgs{
+		CustomerID: "1", AdGroupID: "10",
+		Keywords: []KeywordWithMatchType{{Text: "shoes", MatchType: "EXACT"}},
+	}); err != nil {
+		t.Fatalf("EXACT keywords should pass: %v", err)
 	}
 }

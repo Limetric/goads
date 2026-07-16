@@ -28,13 +28,17 @@ func runCampaigns(ctx context.Context, c *Client, args CampaignsArgs) (Campaigns
 	if args.CustomerID == "" {
 		return CampaignsResult{}, fmt.Errorf("customer_id is required")
 	}
+	dates, err := andDateClause(args.DateStart, args.DateEnd)
+	if err != nil {
+		return CampaignsResult{}, err
+	}
 	query := "SELECT " +
 		"campaign.id, campaign.name, campaign.status, " +
 		"campaign.advertising_channel_type, campaign.bidding_strategy_type, " +
 		"metrics.impressions, metrics.clicks, metrics.cost_micros, " +
 		"metrics.conversions, metrics.conversions_value, metrics.ctr, metrics.average_cpc " +
 		"FROM campaign WHERE campaign.status != 'REMOVED'" +
-		andDateClause(args.DateStart, args.DateEnd) +
+		dates +
 		" ORDER BY metrics.cost_micros DESC"
 
 	rows, err := c.Search(ctx, args.CustomerID, query)
@@ -47,11 +51,12 @@ func runCampaigns(ctx context.Context, c *Client, args CampaignsArgs) (Campaigns
 
 // andDateClause returns an explicit date range when both dates are set and
 // otherwise defaults to the last 30 days. Shared by the metrics read tools.
-func andDateClause(start, end string) string {
-	if start != "" && end != "" {
-		return " AND " + dateClause(start, end)
+func andDateClause(start, end string) (string, error) {
+	clause, err := dateRangeClause(start, end)
+	if err != nil {
+		return "", err
 	}
-	return " AND segments.date DURING LAST_30_DAYS"
+	return " AND " + clause, nil
 }
 
 // enrichCPA inserts metrics.cpa = cost / conversions (currency units) for rows

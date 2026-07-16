@@ -112,7 +112,13 @@ func TestRemoveExtension(t *testing.T) {
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
+	// Destructive: first confirm re-stages (issue #12), second applies.
 	args.Confirm = prev.Token
+	second, err := runRemoveExtension(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("first confirm: %v", err)
+	}
+	args.Confirm = second.Token
 	if _, err := runRemoveExtension(t.Context(), c, args); err != nil {
 		t.Fatalf("apply: %v", err)
 	}

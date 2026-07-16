@@ -64,12 +64,18 @@ func numericID(kind, id string) (string, error) {
 	return id, nil
 }
 
+// escapeGAQLString escapes a value for interpolation inside a single-quoted
+// GAQL string literal: backslashes first, then quotes — escaping only quotes
+// lets a trailing backslash break out of the literal.
+func escapeGAQLString(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	return strings.ReplaceAll(s, `'`, `\'`)
+}
+
 // quoteGAQLString escapes a value for use inside a single-quoted GAQL string
 // literal, e.g. WHERE campaign.name = 'quoteGAQLString(name)'.
 func quoteGAQLString(s string) string {
-	s = strings.ReplaceAll(s, `\`, `\\`)
-	s = strings.ReplaceAll(s, `'`, `\'`)
-	return "'" + s + "'"
+	return "'" + escapeGAQLString(s) + "'"
 }
 
 // buildSelect assembles a simple SELECT query. More elaborate builders (date

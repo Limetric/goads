@@ -1,6 +1,11 @@
 package main
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+)
 
 func TestCreatePortfolioBidding_TargetCPA(t *testing.T) {
 	useTempState(t)
@@ -81,5 +86,41 @@ func TestUpdateKeywordBid_RejectsExcessiveIncrease(t *testing.T) {
 	// Default cap is 100%; 1.0 -> 2.5 is +150% and must be rejected.
 	if _, err := runUpdateKeywordBid(t.Context(), nil, UpdateKeywordBidArgs{CustomerID: "1", AdGroupID: "10", CriterionID: "20", CurrentBid: 1.0, NewBid: 2.5}); err == nil {
 		t.Fatal("expected bid-increase guard to reject +150%")
+	}
+}
+
+func TestUpdateKeywordBid_FetchesBaselineWhenOmitted(t *testing.T) {
+	useTempState(t)
+	t.Setenv("GOOGLE_ADS_MAX_BID_INCREASE_PCT", "") // default 100%
+	// Omitting current_bid used to bypass the bid-increase guard entirely
+	// (issue #12); the real bid is now fetched from the API.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "googleAds:search") {
+			_, _ = w.Write([]byte(`{"results":[{"adGroupCriterion":{"cpcBidMicros":"1000000"}}]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"results":[{}]}`))
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	// Current bid $1.00 fetched; $5.00 is a 400% increase > 100% cap.
+	args := UpdateKeywordBidArgs{CustomerID: "1", AdGroupID: "10", CriterionID: "20", NewBid: 5}
+	if _, err := runUpdateKeywordBid(t.Context(), c, args); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("expected bid-increase guard to use the fetched baseline, got %v", err)
+	}
+
+	// $1.50 is a 50% increase and passes.
+	args.NewBid = 1.5
+	if _, err := runUpdateKeywordBid(t.Context(), c, args); err != nil {
+		t.Fatalf("50%% increase should pass: %v", err)
+	}
+}
+
+func TestUpdateKeywordBid_RejectsNonNumericIDs(t *testing.T) {
+	useTempState(t)
+	if _, err := runUpdateKeywordBid(t.Context(), nil, UpdateKeywordBidArgs{CustomerID: "1", AdGroupID: "x~y", CriterionID: "20", NewBid: 1}); err == nil {
+		t.Fatal("non-numeric ad_group_id should be rejected")
 	}
 }

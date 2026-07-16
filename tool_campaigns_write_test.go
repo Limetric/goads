@@ -1,6 +1,9 @@
 package main
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestDraftCampaign_PreviewThenApply(t *testing.T) {
 	useTempState(t)
@@ -136,4 +139,17 @@ func TestApplyBiddingStrategyCreate(t *testing.T) {
 			t.Errorf("unknown strategy should leave bidding unset, got %v", m)
 		}
 	})
+}
+
+func TestDraftCampaign_BlocksBroadManualCPC(t *testing.T) {
+	useTempState(t)
+	// The BROAD+MANUAL_CPC guard existed but was never wired in (issue #12).
+	_, err := runDraftCampaign(t.Context(), nil, DraftCampaignArgs{
+		CustomerID: "1", CampaignName: "C", DailyBudget: 5,
+		BiddingStrategy: "MANUAL_CPC", AdGroupName: "AG",
+		Keywords: []KeywordWithMatchType{{Text: "shoes", MatchType: "BROAD"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "BROAD") {
+		t.Fatalf("expected the BROAD+MANUAL_CPC guard to block, got %v", err)
+	}
 }

@@ -27,6 +27,10 @@ func runAds(ctx context.Context, c *Client, args AdsArgs) (AdsResult, error) {
 	if args.CustomerID == "" {
 		return AdsResult{}, fmt.Errorf("customer_id is required")
 	}
+	dates, err := andDateClause(args.DateStart, args.DateEnd)
+	if err != nil {
+		return AdsResult{}, err
+	}
 	query := "SELECT " +
 		"campaign.name, campaign.id, ad_group.name, ad_group.id, " +
 		"ad_group_ad.ad.id, ad_group_ad.ad.type, " +
@@ -36,7 +40,7 @@ func runAds(ctx context.Context, c *Client, args AdsArgs) (AdsResult, error) {
 		"metrics.impressions, metrics.clicks, metrics.ctr, " +
 		"metrics.conversions, metrics.cost_micros " +
 		"FROM ad_group_ad WHERE ad_group_ad.status != 'REMOVED'" +
-		andDateClause(args.DateStart, args.DateEnd) +
+		dates +
 		" ORDER BY metrics.cost_micros DESC"
 
 	rows, err := c.Search(ctx, args.CustomerID, query)
