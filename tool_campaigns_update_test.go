@@ -90,12 +90,18 @@ func TestApplyBiddingStrategyUpdate(t *testing.T) {
 		{"target cpa", "TARGET_CPA", 10, 0, "targetCpa", map[string]any{"targetCpaMicros": "10000000"}},
 		{"target roas", "TARGET_ROAS", 0, 2, "targetRoas", map[string]any{"targetRoas": 2.0}},
 		{"manual cpc", "MANUAL_CPC", 0, 0, "manualCpc", map[string]any{}},
+		{"target spend", "TARGET_SPEND", 0, 0, "targetSpend", map[string]any{}},
+		{"maximize clicks maps to target spend", "MAXIMIZE_CLICKS", 0, 0, "targetSpend", map[string]any{}},
+		{"target impression share", "TARGET_IMPRESSION_SHARE", 0, 0, "targetImpressionShare", map[string]any{}},
+		{"percent cpc", "PERCENT_CPC", 0, 0, "percentCpc", map[string]any{}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			campaign := map[string]any{}
 			var mask []string
-			applyBiddingStrategyUpdate(campaign, &mask, tc.strategy, tc.cpa, tc.roas)
+			if err := applyBiddingStrategyUpdate(campaign, &mask, tc.strategy, tc.cpa, tc.roas); err != nil {
+				t.Fatalf("applyBiddingStrategyUpdate: %v", err)
+			}
 			if len(mask) != 1 || mask[0] != tc.wantKey {
 				t.Fatalf("mask = %v, want [%s]", mask, tc.wantKey)
 			}
@@ -114,28 +120,50 @@ func TestApplyBiddingStrategyUpdate(t *testing.T) {
 		})
 	}
 
-	t.Run("target cpa/roas without a value change nothing", func(t *testing.T) {
+	t.Run("target cpa/roas without a value error at preview", func(t *testing.T) {
+		// Zero targets used to stage an op with an empty updateMask that the
+		// API rejected only at confirm time (issue #8).
 		for _, strategy := range []string{"TARGET_CPA", "TARGET_ROAS"} {
 			campaign := map[string]any{}
 			var mask []string
-			applyBiddingStrategyUpdate(campaign, &mask, strategy, 0, 0)
-			if len(campaign) != 0 || len(mask) != 0 {
-				t.Errorf("%s with zero value should be a no-op, got campaign=%v mask=%v", strategy, campaign, mask)
+			if err := applyBiddingStrategyUpdate(campaign, &mask, strategy, 0, 0); err == nil {
+				t.Errorf("%s with zero value should error", strategy)
 			}
 		}
 	})
 
-	t.Run("unknown strategy falls back to biddingStrategyType", func(t *testing.T) {
+	t.Run("unknown strategy errors instead of writing output-only field", func(t *testing.T) {
+		// The old fallback wrote biddingStrategyType, which is OUTPUT_ONLY in
+		// v23 — Google rejected the confirmed mutate every time (issue #8).
 		campaign := map[string]any{}
 		var mask []string
-		applyBiddingStrategyUpdate(campaign, &mask, "TARGET_SPEND", 0, 0)
-		if campaign["biddingStrategyType"] != "TARGET_SPEND" {
-			t.Errorf("expected biddingStrategyType fallback, got %v", campaign)
+		if err := applyBiddingStrategyUpdate(campaign, &mask, "SUPER_BIDDING", 0, 0); err == nil {
+			t.Fatal("unknown strategy should error at preview")
 		}
-		if len(mask) != 1 || mask[0] != "biddingStrategyType" {
-			t.Errorf("mask = %v, want [biddingStrategyType]", mask)
+		if _, ok := campaign["biddingStrategyType"]; ok {
+			t.Fatal("output-only biddingStrategyType must never be written")
 		}
 	})
+}
+
+func TestUpdateCampaign_RejectsNonNumericCampaignID(t *testing.T) {
+	useTempState(t)
+	// campaign_id is interpolated into GAQL when resolving the budget
+	// resource; a crafted ID must be rejected before any query (issue #8).
+	_, err := runUpdateCampaign(t.Context(), nil, UpdateCampaignArgs{
+		CustomerID: "1", CampaignID: "1 OR campaign.id > 0", DailyBudget: 5,
+	})
+	if err == nil || !strings.Contains(err.Error(), "numeric") {
+		t.Fatalf("expected numeric-ID rejection, got %v", err)
+	}
+}
+
+func TestUpdateCampaign_HonorsBlockedOps(t *testing.T) {
+	useTempState(t)
+	t.Setenv("GOOGLE_ADS_BLOCKED_OPS", "update_campaign")
+	if _, err := runUpdateCampaign(t.Context(), nil, UpdateCampaignArgs{CustomerID: "1", CampaignID: "5", DailyBudget: 5}); err == nil {
+		t.Fatal("blocked operation should be rejected")
+	}
 }
 
 func TestUpdateCampaign_NoChanges(t *testing.T) {

@@ -17,14 +17,51 @@ func validateGAQL(query string) error {
 	if q == "" {
 		return fmt.Errorf("empty GAQL query")
 	}
-	if !strings.HasPrefix(strings.ToUpper(q), "SELECT") {
+	// SELECT must be the leading keyword (word boundary — "SELECTfoo" is not).
+	if upper := strings.ToUpper(q); !strings.HasPrefix(upper, "SELECT") ||
+		len(q) < 7 || (q[6] != ' ' && q[6] != '\t' && q[6] != '\n' && q[6] != '\r') {
 		return fmt.Errorf("GAQL query must start with SELECT")
 	}
 	// GAQL is a single statement; a ';' separating statements is not allowed.
-	if i := strings.Index(q, ";"); i >= 0 && strings.TrimSpace(q[i+1:]) != "" {
-		return fmt.Errorf("GAQL accepts a single statement; remove text after ';'")
+	// Semicolons inside quoted string literals are fine (issue #13).
+	var inQuote byte
+	escaped := false
+	for i := 0; i < len(q); i++ {
+		ch := q[i]
+		switch {
+		case escaped:
+			escaped = false
+		case inQuote != 0 && ch == '\\':
+			escaped = true
+		case inQuote != 0:
+			if ch == inQuote {
+				inQuote = 0
+			}
+		case ch == '\'' || ch == '"':
+			inQuote = ch
+		case ch == ';':
+			if strings.TrimSpace(q[i+1:]) != "" {
+				return fmt.Errorf("GAQL accepts a single statement; remove text after ';'")
+			}
+		}
 	}
 	return nil
+}
+
+// numericID validates that a caller-supplied entity ID is purely numeric
+// before it is interpolated into GAQL or a resource name. IDs are attacker/
+// model-supplied input; "1 OR campaign.id > 0" must never reach a query
+// (issues #8, #13).
+func numericID(kind, id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("%s is required", kind)
+	}
+	for _, r := range id {
+		if r < '0' || r > '9' {
+			return "", fmt.Errorf("%s %q must be a plain numeric ID", kind, id)
+		}
+	}
+	return id, nil
 }
 
 // quoteGAQLString escapes a value for use inside a single-quoted GAQL string
