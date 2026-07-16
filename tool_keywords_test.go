@@ -7,7 +7,7 @@ import (
 
 func TestRunKeywordPerformance(t *testing.T) {
 	results := `[{"adGroupCriterion":{"keyword":{"text":"shoes"}},"metrics":{"cost_micros":"2000000"}}]`
-	srv := gaqlServer(t, results, "FROM keyword_view", "ad_group_criterion.status != 'REMOVED'")
+	srv := gaqlServer(t, results, "FROM keyword_view", "ad_group_criterion.status != 'REMOVED'", "segments.date DURING LAST_30_DAYS")
 	defer srv.Close()
 
 	res, err := runKeywordPerformance(t.Context(), newTestClient(t, srv), KeywordPerformanceArgs{CustomerID: "1"})
@@ -16,6 +16,14 @@ func TestRunKeywordPerformance(t *testing.T) {
 	}
 	if res.TotalCount != 1 || !strings.Contains(string(res.Keywords[0]), `"cost_readable":"2.00"`) {
 		t.Errorf("unexpected result: %+v", res)
+	}
+}
+
+func TestRunKeywordPerformance_WithDates(t *testing.T) {
+	srv := gaqlServer(t, `[]`, "segments.date BETWEEN '2024-02-01' AND '2024-02-28'")
+	defer srv.Close()
+	if _, err := runKeywordPerformance(t.Context(), newTestClient(t, srv), KeywordPerformanceArgs{CustomerID: "1", DateStart: "2024-02-01", DateEnd: "2024-02-28"}); err != nil {
+		t.Fatalf("runKeywordPerformance: %v", err)
 	}
 }
 

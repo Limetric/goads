@@ -40,9 +40,29 @@ func errServer(t *testing.T) *httptest.Server {
 	}))
 }
 
+func TestAndDateClause(t *testing.T) {
+	tests := []struct {
+		name       string
+		start, end string
+		want       string
+	}{
+		{name: "default", want: " AND segments.date DURING LAST_30_DAYS"},
+		{name: "explicit range", start: "2024-01-01", end: "2024-01-31", want: " AND segments.date BETWEEN '2024-01-01' AND '2024-01-31'"},
+		{name: "start only", start: "2024-01-01", want: " AND segments.date DURING LAST_30_DAYS"},
+		{name: "end only", end: "2024-01-31", want: " AND segments.date DURING LAST_30_DAYS"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := andDateClause(tt.start, tt.end); got != tt.want {
+				t.Errorf("andDateClause(%q, %q) = %q, want %q", tt.start, tt.end, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestRunCampaigns(t *testing.T) {
 	results := `[{"campaign":{"id":"1","name":"A"},"metrics":{"cost_micros":"5000000","conversions":2}}]`
-	srv := gaqlServer(t, results, "FROM campaign", "campaign.status != 'REMOVED'", "ORDER BY metrics.cost_micros DESC")
+	srv := gaqlServer(t, results, "FROM campaign", "campaign.status != 'REMOVED'", "segments.date DURING LAST_30_DAYS", "ORDER BY metrics.cost_micros DESC")
 	defer srv.Close()
 
 	res, err := runCampaigns(t.Context(), newTestClient(t, srv), CampaignsArgs{CustomerID: "123-456-7890"})
