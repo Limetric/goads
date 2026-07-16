@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	mathrand "math/rand/v2"
 	"net/http"
 	"os"
 	"sort"
@@ -16,9 +17,13 @@ import (
 	"golang.org/x/oauth2"
 )
 
-// defaultBaseURL is the Google Ads REST API v23 base. Override via
+// apiVersion is the Google Ads REST API version this client targets. It is the
+// single place the version is spelled; the base and upload URLs derive from it.
+const apiVersion = "v23"
+
+// defaultBaseURL is the Google Ads REST API base. Override via
 // GOOGLE_ADS_API_BASE_URL (config.BaseURL) — tests point it at httptest.
-const defaultBaseURL = "https://googleads.googleapis.com/v23"
+const defaultBaseURL = "https://googleads.googleapis.com/" + apiVersion
 
 // Client talks to the Google Ads REST API. It is safe for concurrent use.
 //
@@ -27,6 +32,7 @@ const defaultBaseURL = "https://googleads.googleapis.com/v23"
 type Client struct {
 	cfg    *Config
 	http   *http.Client
+	upload *http.Client
 	tokens oauth2.TokenSource
 }
 
@@ -36,8 +42,12 @@ func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		cfg:    cfg,
-		http:   &http.Client{Timeout: 60 * time.Second},
+		cfg:  cfg,
+		http: &http.Client{Timeout: 60 * time.Second},
+		// Media uploads stream arbitrarily large bodies; http.Client.Timeout
+		// covers the entire transfer, so a 60s cap would abort any upload
+		// slower than that. Uploads are bounded by the request context instead.
+		upload: &http.Client{},
 		tokens: newTokenSource(ctx, cfg),
 	}, nil
 }
@@ -65,75 +75,124 @@ func (c *Client) buildHeaders(req *http.Request) error {
 	return nil
 }
 
-// post sends a JSON body to {baseURL}/{path} and decodes the JSON response into
-// out. It surfaces Google Ads API error payloads as Go errors.
-func (c *Client) post(ctx context.Context, path string, body, out any) error {
-	var buf bytes.Buffer
-	if body != nil {
-		if err := json.NewEncoder(&buf).Encode(body); err != nil {
-			return fmt.Errorf("encode request: %w", err)
+// Retry policy: transient Google Ads responses (429 RESOURCE_EXHAUSTED,
+// 5xx) are retried with jittered exponential backoff, honoring Retry-After.
+// Reads retry both; writes retry only 429 (the request was rejected before
+// processing) because a 5xx may have applied the mutation server-side.
+const retryMaxAttempts = 3
+
+// retryBaseDelay is a var so tests can shrink it.
+var retryBaseDelay = 500 * time.Millisecond
+
+type retryPolicy int
+
+const (
+	retryReads  retryPolicy = iota // retry 429 and 5xx
+	retryWrites                    // retry 429 only
+)
+
+func (p retryPolicy) retryable(status int) bool {
+	if status == http.StatusTooManyRequests {
+		return true
+	}
+	return p == retryReads && status >= 500
+}
+
+// backoffDelay computes the sleep before attempt+1: Retry-After when the
+// server sent one, otherwise base*2^(attempt-1) plus up to 50% jitter.
+func backoffDelay(attempt int, retryAfter string) time.Duration {
+	if retryAfter != "" {
+		if secs, err := strconv.Atoi(retryAfter); err == nil && secs >= 0 {
+			return time.Duration(secs) * time.Second
 		}
 	}
+	d := retryBaseDelay << (attempt - 1)
+	return d + time.Duration(mathrand.Int64N(int64(d)/2+1))
+}
+
+// doJSON issues one JSON request to {baseURL}/{path}, decoding the response
+// into out and retrying transient failures per the policy.
+func (c *Client) doJSON(ctx context.Context, method, path string, payload []byte, out any, policy retryPolicy) error {
 	url := c.cfg.BaseURL + "/" + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, &buf)
-	if err != nil {
-		return err
-	}
-	if err := c.buildHeaders(req); err != nil {
-		return err
-	}
-
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("call %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read %s response: %w", path, err)
-	}
-	if resp.StatusCode >= 300 {
-		return apiError(resp.StatusCode, data)
-	}
-	if out != nil && len(data) > 0 {
-		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("decode %s response: %w", path, err)
+	for attempt := 1; ; attempt++ {
+		var body io.Reader
+		if payload != nil {
+			body = bytes.NewReader(payload)
 		}
+		req, err := http.NewRequestWithContext(ctx, method, url, body)
+		if err != nil {
+			return err
+		}
+		if err := c.buildHeaders(req); err != nil {
+			return err
+		}
+		resp, err := c.http.Do(req)
+		if err != nil {
+			return fmt.Errorf("call %s: %w", path, err)
+		}
+		data, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("read %s response: %w", path, err)
+		}
+		if resp.StatusCode >= 300 {
+			apiErr := apiError(resp.StatusCode, data)
+			if attempt < retryMaxAttempts && policy.retryable(resp.StatusCode) {
+				select {
+				case <-time.After(backoffDelay(attempt, resp.Header.Get("Retry-After"))):
+					continue
+				case <-ctx.Done():
+					return apiErr
+				}
+			}
+			return apiErr
+		}
+		if out != nil && len(data) > 0 {
+			if err := json.Unmarshal(data, out); err != nil {
+				return fmt.Errorf("decode %s response: %w", path, err)
+			}
+		}
+		return nil
 	}
-	return nil
+}
+
+func encodeJSON(body any) ([]byte, error) {
+	if body == nil {
+		return nil, nil
+	}
+	data, err := json.Marshal(body)
+	if err != nil {
+		return nil, fmt.Errorf("encode request: %w", err)
+	}
+	return data, nil
+}
+
+// post sends a JSON body to {baseURL}/{path} and decodes the JSON response into
+// out. It surfaces Google Ads API error payloads as Go errors. Read-only
+// callers get the full retry policy; mutating callers use postWrite.
+func (c *Client) post(ctx context.Context, path string, body, out any) error {
+	payload, err := encodeJSON(body)
+	if err != nil {
+		return err
+	}
+	return c.doJSON(ctx, http.MethodPost, path, payload, out, retryReads)
+}
+
+// postWrite is post for mutating endpoints: transient 429s are retried (the
+// request was rate-limited before processing), 5xx are not (the mutation may
+// have been applied).
+func (c *Client) postWrite(ctx context.Context, path string, body, out any) error {
+	payload, err := encodeJSON(body)
+	if err != nil {
+		return err
+	}
+	return c.doJSON(ctx, http.MethodPost, path, payload, out, retryWrites)
 }
 
 // get issues a GET to {baseURL}/{path} and decodes the JSON response into out.
 // Mirrors post for read-only endpoints that take no body.
 func (c *Client) get(ctx context.Context, path string, out any) error {
-	url := c.cfg.BaseURL + "/" + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
-	if err != nil {
-		return err
-	}
-	if err := c.buildHeaders(req); err != nil {
-		return err
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("call %s: %w", path, err)
-	}
-	defer resp.Body.Close()
-
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return fmt.Errorf("read %s response: %w", path, err)
-	}
-	if resp.StatusCode >= 300 {
-		return apiError(resp.StatusCode, data)
-	}
-	if out != nil && len(data) > 0 {
-		if err := json.Unmarshal(data, out); err != nil {
-			return fmt.Errorf("decode %s response: %w", path, err)
-		}
-	}
-	return nil
+	return c.doJSON(ctx, http.MethodGet, path, nil, out, retryReads)
 }
 
 // apiStatusError is a non-2xx Google Ads API response. It carries the HTTP
@@ -319,7 +378,7 @@ func (c *Client) Mutate(ctx context.Context, customerID string, ops []any) (*Mut
 	path := fmt.Sprintf("customers/%s/googleAds:mutate", customerID)
 	body := map[string]any{"mutateOperations": ops, "partialFailure": true}
 	var out MutateResponse
-	if err := c.post(ctx, path, body, &out); err != nil {
+	if err := c.postWrite(ctx, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -361,7 +420,7 @@ func (c *Client) UploadYouTubeVideo(ctx context.Context, customerID, filePath, t
 	if err := json.NewEncoder(&body).Encode(metadata); err != nil {
 		return nil, fmt.Errorf("encode video metadata: %w", err)
 	}
-	uploadBaseURL := strings.TrimSuffix(c.cfg.BaseURL, "/v23") + "/resumable/upload/v23"
+	uploadBaseURL := strings.TrimSuffix(c.cfg.BaseURL, "/"+apiVersion) + "/resumable/upload/" + apiVersion
 	startURL := fmt.Sprintf("%s/customers/%s/youTubeVideoUploads:create", uploadBaseURL, customerID)
 	startReq, err := http.NewRequestWithContext(ctx, http.MethodPost, startURL, &body)
 	if err != nil {
@@ -401,7 +460,7 @@ func (c *Client) UploadYouTubeVideo(ctx context.Context, customerID, filePath, t
 	uploadReq.Header.Set("X-Goog-Upload-Offset", "0")
 	uploadReq.Header.Set("X-Goog-Upload-Command", "upload, finalize")
 	uploadReq.ContentLength = info.Size()
-	uploadResp, err := c.http.Do(uploadReq)
+	uploadResp, err := c.upload.Do(uploadReq)
 	if err != nil {
 		return nil, fmt.Errorf("upload YouTube video bytes: %w", err)
 	}
@@ -471,7 +530,7 @@ func (c *Client) ApplyRecommendations(ctx context.Context, customerID string, re
 	path := fmt.Sprintf("customers/%s/recommendations:apply", customerID)
 	body := map[string]any{"operations": recommendationOps(resourceNames), "partialFailure": true}
 	var out RecommendationResponse
-	if err := c.post(ctx, path, body, &out); err != nil {
+	if err := c.postWrite(ctx, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -484,7 +543,7 @@ func (c *Client) DismissRecommendations(ctx context.Context, customerID string, 
 	path := fmt.Sprintf("customers/%s/recommendations:dismiss", customerID)
 	body := map[string]any{"operations": recommendationOps(resourceNames)}
 	var out RecommendationResponse
-	if err := c.post(ctx, path, body, &out); err != nil {
+	if err := c.postWrite(ctx, path, body, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

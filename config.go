@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"strings"
 
@@ -55,6 +57,7 @@ func loadConfig(path string) (*Config, error) {
 func (cfg *Config) finalize() {
 	overlayEnv(cfg)
 	cfg.LoginCustomerID = normalizeCustomerID(cfg.LoginCustomerID)
+	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
 	}
@@ -100,10 +103,32 @@ func (c *Config) validate() error {
 	return nil
 }
 
-// isTest reports whether we're pointed at a non-production base URL, in which
-// case auth and credential checks are relaxed for offline tests.
+// isTest reports whether we're pointed at a local/offline base URL (httptest
+// servers and the like), in which case auth and credential checks are relaxed.
+//
+// Only plain-HTTP and loopback URLs count as test mode. A customized HTTPS
+// endpoint (regional endpoint, proxy, future API version) is a real target and
+// keeps the user's real credentials — inferring test mode from any URL
+// difference used to silently swap in fake credentials (issue #5).
 func (c *Config) isTest() bool {
-	return c.BaseURL != "" && c.BaseURL != defaultBaseURL
+	if c.BaseURL == "" || c.BaseURL == defaultBaseURL {
+		return false
+	}
+	u, err := url.Parse(c.BaseURL)
+	if err != nil {
+		return false
+	}
+	if u.Scheme != "https" {
+		return true
+	}
+	host := u.Hostname()
+	if host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return false
 }
 
 // normalizeCustomerID strips dashes and whitespace ("123-456-7890" -> "1234567890").

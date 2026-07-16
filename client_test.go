@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestUploadYouTubeVideo(t *testing.T) {
@@ -243,4 +244,107 @@ func TestApplyAndDismissRecommendations(t *testing.T) {
 			t.Error("dismiss should not send partialFailure")
 		}
 	})
+}
+
+func TestRetry_ReadsRetryTransientErrors(t *testing.T) {
+	old := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = old }()
+
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		switch calls {
+		case 1:
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"rate limited","status":"RESOURCE_EXHAUSTED"}}`))
+		case 2:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"message":"backend","status":"INTERNAL"}}`))
+		default:
+			_, _ = w.Write([]byte(`{"results":[{"campaign":{"id":"1"}}]}`))
+		}
+	}))
+	defer srv.Close()
+
+	rows, err := newTestClient(t, srv).Search(context.Background(), "123", "SELECT campaign.id FROM campaign")
+	if err != nil {
+		t.Fatalf("Search should succeed after retries: %v", err)
+	}
+	if calls != 3 || len(rows) != 1 {
+		t.Errorf("calls = %d (want 3), rows = %d (want 1)", calls, len(rows))
+	}
+}
+
+func TestRetry_ReadsGiveUpAfterMaxAttempts(t *testing.T) {
+	old := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = old }()
+
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"error":{"message":"unavailable","status":"UNAVAILABLE"}}`))
+	}))
+	defer srv.Close()
+
+	_, err := newTestClient(t, srv).Search(context.Background(), "123", "SELECT campaign.id FROM campaign")
+	if err == nil {
+		t.Fatal("expected error after exhausting retries")
+	}
+	if calls != retryMaxAttempts {
+		t.Errorf("calls = %d, want %d", calls, retryMaxAttempts)
+	}
+}
+
+func TestRetry_MutateDoesNotRetry5xx(t *testing.T) {
+	old := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = old }()
+
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"error":{"message":"backend","status":"INTERNAL"}}`))
+	}))
+	defer srv.Close()
+
+	op := map[string]any{"campaignBudgetOperation": map[string]any{"update": map[string]any{}}}
+	if _, err := newTestClient(t, srv).Mutate(context.Background(), "123", []any{op}); err == nil {
+		t.Fatal("expected error")
+	}
+	if calls != 1 {
+		t.Errorf("a 5xx mutate must not be retried (may have applied server-side): calls = %d", calls)
+	}
+}
+
+func TestRetry_MutateRetries429(t *testing.T) {
+	old := retryBaseDelay
+	retryBaseDelay = time.Millisecond
+	defer func() { retryBaseDelay = old }()
+
+	var calls int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		w.Header().Set("Content-Type", "application/json")
+		if calls == 1 {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusTooManyRequests)
+			_, _ = w.Write([]byte(`{"error":{"message":"rate limited","status":"RESOURCE_EXHAUSTED"}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"results":[{}]}`))
+	}))
+	defer srv.Close()
+
+	op := map[string]any{"campaignBudgetOperation": map[string]any{"update": map[string]any{}}}
+	if _, err := newTestClient(t, srv).Mutate(context.Background(), "123", []any{op}); err != nil {
+		t.Fatalf("Mutate should succeed after a 429 retry: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("calls = %d, want 2", calls)
+	}
 }

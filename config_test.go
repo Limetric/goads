@@ -112,11 +112,29 @@ func TestConfig_Validate(t *testing.T) {
 }
 
 func TestConfig_IsTest(t *testing.T) {
-	if !(&Config{BaseURL: "http://localhost:1"}).isTest() {
-		t.Error("non-production base URL should be a test URL")
+	cases := map[string]bool{
+		"http://localhost:1":                    true, // plain HTTP → test
+		"http://127.0.0.1:39217":                true, // httptest server → test
+		"http://[::1]:8080":                     true, // IPv6 loopback → test
+		defaultBaseURL:                          false,
+		"":                                      false,
+		"https://googleads.googleapis.com/v24":  false, // future version: REAL credentials (issue #5)
+		"https://googleads.googleapis.com/v23/": false, // trailing slash: REAL credentials (issue #5)
+		"https://ads-proxy.example.com/v23":     false, // custom HTTPS endpoint: REAL credentials
 	}
-	if (&Config{BaseURL: defaultBaseURL}).isTest() {
-		t.Error("production base URL should not be a test URL")
+	for baseURL, want := range cases {
+		if got := (&Config{BaseURL: baseURL}).isTest(); got != want {
+			t.Errorf("isTest(%q) = %t, want %t", baseURL, got, want)
+		}
+	}
+}
+
+func TestFinalize_NormalizesBaseURL(t *testing.T) {
+	clearAdsEnv(t)
+	cfg := &Config{BaseURL: "https://googleads.googleapis.com/v23/"}
+	cfg.finalize()
+	if cfg.BaseURL != "https://googleads.googleapis.com/v23" {
+		t.Errorf("trailing slash should be trimmed, got %q", cfg.BaseURL)
 	}
 }
 
