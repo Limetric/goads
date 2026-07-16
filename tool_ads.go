@@ -11,8 +11,8 @@ import (
 // AdsArgs is the input for the `ads` read tool, with an optional date window.
 type AdsArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
-	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics"`
-	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics"`
+	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics; defaults to last 30 days"`
+	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics; defaults to last 30 days"`
 }
 
 // AdsResult is the structured output: enriched ad rows + a count.
@@ -70,7 +70,7 @@ var adsCmd = &cobra.Command{
 
 func init() {
 	adsCmd.Flags().StringVar(&adsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
-	adsCmd.Flags().StringVar(&adsArgs.DateStart, "date-start", "", "start date YYYY-MM-DD")
-	adsCmd.Flags().StringVar(&adsArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD")
+	adsCmd.Flags().StringVar(&adsArgs.DateStart, "date-start", "", "start date YYYY-MM-DD (defaults to last 30 days)")
+	adsCmd.Flags().StringVar(&adsArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD (defaults to last 30 days)")
 	_ = adsCmd.MarkFlagRequired("customer-id")
 }

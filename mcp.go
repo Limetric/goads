@@ -52,15 +52,15 @@ func registerTools(server *mcp.Server, client *Client) {
 		runBudgetSet)
 
 	addTool(server, client, "campaigns",
-		"Show campaign-level performance metrics (cost, clicks, conversions, CTR, CPA) for non-removed campaigns.",
+		"Show campaign-level performance metrics (cost, clicks, conversions, CTR, CPA) for non-removed campaigns (defaults to the last 30 days).",
 		runCampaigns)
 
 	addTool(server, client, "ads",
-		"Show ad-level performance metrics for non-removed ads, ordered by cost.",
+		"Show ad-level performance metrics for non-removed ads, ordered by cost (defaults to the last 30 days).",
 		runAds)
 
 	addTool(server, client, "keyword_performance",
-		"Show keyword-level performance metrics (impressions, clicks, CTR, CPC, cost, conversions, quality score).",
+		"Show keyword-level performance metrics (impressions, clicks, CTR, CPC, cost, conversions, quality score; defaults to the last 30 days).",
 		runKeywordPerformance)
 
 	addTool(server, client, "search_terms",

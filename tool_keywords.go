@@ -15,8 +15,8 @@ import (
 // KeywordPerformanceArgs scopes keyword performance to an optional date window.
 type KeywordPerformanceArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
-	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics"`
-	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics"`
+	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics; defaults to last 30 days"`
+	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics; defaults to last 30 days"`
 }
 
 type KeywordPerformanceResult struct {
@@ -174,8 +174,8 @@ var negativeKeywordsCmd = &cobra.Command{
 
 func init() {
 	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
-	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.DateStart, "date-start", "", "start date YYYY-MM-DD")
-	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD")
+	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.DateStart, "date-start", "", "start date YYYY-MM-DD (defaults to last 30 days)")
+	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD (defaults to last 30 days)")
 	_ = keywordsPerfCmd.MarkFlagRequired("customer-id")
 
 	searchTermsCmd.Flags().StringVar(&searchTermsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")

@@ -9,11 +9,11 @@ import (
 )
 
 // CampaignsArgs is the input for the `campaigns` read tool. An optional date
-// range narrows the performance metrics to a window; omit both for all-time.
+// range narrows the performance metrics to a window; omit it for the last 30 days.
 type CampaignsArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
-	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics"`
-	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics"`
+	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics; defaults to last 30 days"`
+	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics; defaults to last 30 days"`
 }
 
 // CampaignsResult is the structured output: enriched campaign rows + a count.
@@ -45,13 +45,13 @@ func runCampaigns(ctx context.Context, c *Client, args CampaignsArgs) (Campaigns
 	return CampaignsResult{Campaigns: rows, TotalCount: len(rows)}, nil
 }
 
-// andDateClause returns " AND segments.date BETWEEN …" when both dates are set,
-// otherwise "". Shared by the metrics read tools.
+// andDateClause returns an explicit date range when both dates are set and
+// otherwise defaults to the last 30 days. Shared by the metrics read tools.
 func andDateClause(start, end string) string {
 	if start != "" && end != "" {
 		return " AND " + dateClause(start, end)
 	}
-	return ""
+	return " AND segments.date DURING LAST_30_DAYS"
 }
 
 // enrichCPA inserts metrics.cpa = cost / conversions (currency units) for rows
@@ -110,7 +110,7 @@ var campaignsCmd = &cobra.Command{
 
 func init() {
 	campaignsCmd.Flags().StringVar(&campaignsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
-	campaignsCmd.Flags().StringVar(&campaignsArgs.DateStart, "date-start", "", "start date YYYY-MM-DD")
-	campaignsCmd.Flags().StringVar(&campaignsArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD")
+	campaignsCmd.Flags().StringVar(&campaignsArgs.DateStart, "date-start", "", "start date YYYY-MM-DD (defaults to last 30 days)")
+	campaignsCmd.Flags().StringVar(&campaignsArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD (defaults to last 30 days)")
 	_ = campaignsCmd.MarkFlagRequired("customer-id")
 }

@@ -7,7 +7,7 @@ import (
 
 func TestRunAds(t *testing.T) {
 	results := `[{"adGroupAd":{"ad":{"id":"7"}},"metrics":{"cost_micros":"1000000"}}]`
-	srv := gaqlServer(t, results, "FROM ad_group_ad", "ad_group_ad.status != 'REMOVED'", "ORDER BY metrics.cost_micros DESC")
+	srv := gaqlServer(t, results, "FROM ad_group_ad", "ad_group_ad.status != 'REMOVED'", "segments.date DURING LAST_30_DAYS", "ORDER BY metrics.cost_micros DESC")
 	defer srv.Close()
 
 	res, err := runAds(t.Context(), newTestClient(t, srv), AdsArgs{CustomerID: "1"})
