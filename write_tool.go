@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 )
 
 // dollarsToMicros converts a currency amount to micros (1 unit = 1,000,000
-// micros). Google Ads money fields are expressed in micros.
+// micros). Google Ads money fields are expressed in micros. The product is
+// rounded, not truncated: 4.10 * 1e6 is 4099999.9999999995 in float64, and
+// Google Ads rejects budget micros that aren't a multiple of the currency's
+// minimum unit.
 func dollarsToMicros(dollars float64) int64 {
-	return int64(dollars * 1_000_000.0)
+	return int64(math.Round(dollars * 1_000_000.0))
 }
 
 // microsString renders a micros amount as the decimal string the REST API

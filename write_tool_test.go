@@ -80,6 +80,25 @@ func opUpdate(t *testing.T, op map[string]any, key string) map[string]any {
 	return update
 }
 
+func TestDollarsToMicros_Rounds(t *testing.T) {
+	// float64 products like 4.10*1e6 = 4099999.9999999995 must round, not
+	// truncate — Google Ads rejects budgets that aren't a multiple of the
+	// currency minimum unit (issue #4).
+	cases := map[float64]int64{
+		4.10:  4_100_000,
+		0.07:  70_000,
+		19.99: 19_990_000,
+		1.15:  1_150_000,
+		0:     0,
+		50:    50_000_000,
+	}
+	for in, want := range cases {
+		if got := dollarsToMicros(in); got != want {
+			t.Errorf("dollarsToMicros(%v) = %d, want %d", in, got, want)
+		}
+	}
+}
+
 func TestWriteHelpers_PreviewThenApply(t *testing.T) {
 	useTempState(t)
 	srv, cap := mutateServer(t)
