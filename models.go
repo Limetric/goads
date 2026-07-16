@@ -5,9 +5,9 @@ import (
 	"strings"
 )
 
-// This file ports upstream `src/models/*`: lifecycle status, ad rotation mode,
-// and the next-action hint surfaced to agents. Rust enums become Go string
-// types whose values match the Google Ads REST API enum strings exactly.
+// This file defines lifecycle status, ad rotation mode, and the next-action hint
+// surfaced to agents. The Go string types match the Google Ads REST API enum
+// strings exactly.
 
 // AdStatus is the lifecycle status of an ad, ad group, campaign, or asset group.
 type AdStatus string

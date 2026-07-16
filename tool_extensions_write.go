@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/extensions_write.rs`: drafting sitelink,
-// callout, and structured-snippet extensions, and removing a campaign asset.
+// This file drafts sitelink, callout, and structured-snippet extensions and
+// removes campaign assets.
 // Asset-create + campaign-link ops share a negative temp resource ID so the
 // link references the just-created asset within the same mutate batch.
 

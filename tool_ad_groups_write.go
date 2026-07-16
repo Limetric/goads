@@ -8,9 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/ad_groups_write.rs`: creating and updating ad
-// groups. New ad groups default to PAUSED for safety, and the preview carries a
-// next-action hint pointing at enable_entity.
+// This file creates and updates ad groups. New ad groups default to PAUSED for
+// safety, and the preview carries a next-action hint pointing at enable_entity.
 
 // CreateAdGroupArgs drafts a new ad group in an existing campaign.
 type CreateAdGroupArgs struct {

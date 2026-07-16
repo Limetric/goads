@@ -9,9 +9,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/keyword_planner.rs`: discovering keyword ideas
-// from seed terms (via the Keyword Planner generateKeywordIdeas endpoint), and
-// pulling historical performance for specific keywords as a rough forecast.
+// This file discovers keyword ideas from seed terms via the Keyword Planner
+// generateKeywordIdeas endpoint and pulls historical performance for specific
+// keywords as a rough forecast.
 
 // DiscoverKeywordsArgs seeds keyword-idea discovery.
 type DiscoverKeywordsArgs struct {

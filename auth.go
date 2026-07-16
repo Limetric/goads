@@ -7,9 +7,8 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
-// staticTokenSource always returns the same token. Used in test mode so the
-// suite never needs real OAuth credentials (mirrors the upstream
-// "test-access-token" fallback).
+// staticTokenSource always returns the same token. Test mode uses it so the
+// suite never needs real OAuth credentials.
 type staticTokenSource struct{ tok *oauth2.Token }
 
 func (s staticTokenSource) Token() (*oauth2.Token, error) { return s.tok, nil }

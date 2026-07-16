@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports the create half of upstream `tools/campaigns_write.rs`:
 // draft_campaign builds budget + campaign + ad group (+ optional keywords) as
 // one atomic batch using negative temp resource IDs (-1 budget, -2 campaign,
 // -3 ad group). The update half lives in tool_campaigns_update.go; the shared

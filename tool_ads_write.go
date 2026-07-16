@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/ads_write.rs`: drafting a Responsive Search
-// Ad (RSA). New ads default to PAUSED with a next-action hint to enable them.
+// This file drafts Responsive Search Ads (RSAs). New ads default to PAUSED with
+// a next-action hint to enable them.
 
 // DraftRsaArgs drafts a Responsive Search Ad in an ad group. RSAs need 3-15
 // headlines (<=30 chars) and 2-4 descriptions (<=90 chars).

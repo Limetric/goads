@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// This file ports the result-shaping helpers from upstream `src/gaql.rs`:
-// SELECT-field extraction, micros→human cost enrichment, table/CSV rendering,
-// a date WHERE-clause builder, and GAQL error hints. They operate on the
+// This file provides GAQL result-shaping helpers: SELECT-field extraction,
+// micros→human cost enrichment, table/CSV rendering, a date WHERE-clause
+// builder, and GAQL error hints. They operate on the
 // []json.RawMessage rows returned by Client.Search.
 
 // parseSelectFields extracts the field names from a GAQL query's SELECT clause.

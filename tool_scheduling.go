@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/scheduling.rs`: setting campaign ad schedules
-// (day-of-week + time windows). It is a write that previews first.
+// This file sets campaign ad schedules (day-of-week + time windows). It is a
+// write that previews first.
 
 var validScheduleDays = map[string]bool{
 	"MONDAY": true, "TUESDAY": true, "WEDNESDAY": true, "THURSDAY": true,

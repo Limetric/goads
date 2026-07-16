@@ -8,9 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/keywords_write.rs`: drafting keywords, adding
-// negative keywords, and removing both (the removes are destructive). All
-// preview first.
+// This file drafts keywords, adds negative keywords, and removes both (the
+// removes are destructive). All writes preview first.
 
 var validMatchTypes = map[string]bool{"EXACT": true, "PHRASE": true, "BROAD": true}
 

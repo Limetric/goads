@@ -101,7 +101,7 @@ func (c *Config) validate() error {
 }
 
 // isTest reports whether we're pointed at a non-production base URL, in which
-// case auth and credential checks are relaxed (matches the upstream behavior).
+// case auth and credential checks are relaxed for offline tests.
 func (c *Config) isTest() bool {
 	return c.BaseURL != "" && c.BaseURL != defaultBaseURL
 }

@@ -5,11 +5,9 @@ Status: Approved (ready for implementation plan)
 
 ## Goal
 
-Make Google Ads sign-in seamless. Today, getting a refresh token requires the
-upstream Rust project's `scripts/generate_token.sh` — a bash script that shells
-out to `python3` and `curl` to run a loopback OAuth2 flow. Port that flow into a
-native Go subcommand, `goads login`, that needs no external tooling and writes
-the result straight into the goads config so subsequent commands "just work".
+Make Google Ads sign-in seamless. Add a native Go subcommand, `goads login`,
+that runs the loopback OAuth2 flow without external tooling and writes the
+result straight into the goads config so subsequent commands "just work".
 
 This replaces the multi-tool bash script with one self-contained command using
 the `golang.org/x/oauth2` dependency goads already has.

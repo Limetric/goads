@@ -9,14 +9,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports the update half of upstream `tools/campaigns_write.rs`:
-// update_campaign changes a campaign's budget, bidding strategy, and/or adds
+// This file updates a campaign's budget and bidding strategy, and can add
 // geo/language targeting. A budget change targets the campaign's budget
 // resource (a distinct ID), which is resolved from the API first.
 
 // applyBiddingStrategyUpdate sets the bidding sub-field on a campaign update map
 // and records the touched fields in mask. Unknown strategies fall back to the
-// (output-only in v23) biddingStrategyType field, matching upstream.
+// output-only v23 biddingStrategyType field.
 func applyBiddingStrategyUpdate(campaign map[string]any, mask *[]string, strategy string, cpa, roas float64) {
 	switch strategy {
 	case "MAXIMIZE_CONVERSIONS":

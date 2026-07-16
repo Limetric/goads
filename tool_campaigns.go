@@ -55,7 +55,7 @@ func andDateClause(start, end string) string {
 }
 
 // enrichCPA inserts metrics.cpa = cost / conversions (currency units) for rows
-// that have positive conversions, mirroring upstream campaigns enrichment.
+// that have positive conversions.
 func enrichCPA(rows []json.RawMessage) []json.RawMessage {
 	out := make([]json.RawMessage, len(rows))
 	for i, r := range rows {

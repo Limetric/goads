@@ -12,8 +12,8 @@ import (
 	"time"
 )
 
-// This file ports the upstream `safety/` module: write guards, a human-readable
-// mutation preview, and a confirm-token flow. The rule: no mutating call
+// This file implements write guards, a human-readable mutation preview, and a
+// confirm-token flow. The rule: no mutating call
 // executes on first request. A write tool returns a preview plus a short-lived
 // token; the caller re-invokes with that token to actually apply the change.
 //

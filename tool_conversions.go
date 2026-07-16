@@ -8,8 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ConversionsArgs lists the conversion actions configured in an account. Ports
-// upstream `tools/conversions.rs`.
+// ConversionsArgs lists the conversion actions configured in an account.
 type ConversionsArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
 }

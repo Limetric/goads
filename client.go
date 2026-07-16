@@ -230,7 +230,7 @@ func formatErrorCode(code map[string]any) string {
 
 // --- Operations -----------------------------------------------------------
 //
-// The upstream server uses exactly five REST endpoints, all implemented here:
+// The client uses these Google Ads REST endpoints:
 //
 //   customers/{id}/googleAds:search          -> Search
 //   customers/{id}/googleAds:mutate          -> Mutate

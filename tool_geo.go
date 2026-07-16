@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/geo.rs`: searching geo target constants by
-// name (to find location IDs) and geographic performance reporting.
+// This file searches geo target constants by name (to find location IDs) and
+// reports geographic performance.
 
 // GeoTargetsArgs searches geo target constants whose name matches a substring.
 type GeoTargetsArgs struct {

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a native `goads login` CLI command that runs Google's loopback OAuth2 flow to mint a refresh token and writes it into the goads config — replacing the upstream bash `generate_token.sh`.
+**Goal:** Add a native `goads login` CLI command that runs Google's loopback OAuth2 flow to mint a refresh token and writes it into the goads config.
 
 **Architecture:** One new file `login.go` (+ `login_test.go`), all `package main`. Small, independently-testable units: a credentials.json parser, a credential resolver, a loopback OAuth server, a token-exchange wrapper, a config writer, and a cobra command that wires them together. Uses the existing `golang.org/x/oauth2`/`google` and `github.com/BurntSushi/toml` deps — no new dependencies.
 

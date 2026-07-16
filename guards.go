@@ -8,13 +8,13 @@ import (
 	"unicode/utf8"
 )
 
-// This file ports upstream `src/safety/guards.rs`: spend caps, bid-increase
-// limits, blocked-operation checks, the BROAD+MANUAL_CPC trap, double-confirm
-// heuristics, and RSA/sitelink character-limit validators. Guards are pure
-// functions taking an explicit SafetyConfig so they are trivially testable.
+// This file implements spend caps, bid-increase limits, blocked-operation
+// checks, the BROAD+MANUAL_CPC trap, double-confirm heuristics, and RSA/sitelink
+// character-limit validators. Guards are pure functions taking an explicit
+// SafetyConfig so they are trivially testable.
 
-// SafetyConfig holds write-guard thresholds. Values default to the upstream
-// defaults and are overridable via environment variables.
+// SafetyConfig holds write-guard thresholds. Values have conservative defaults
+// and are overridable via environment variables.
 type SafetyConfig struct {
 	MaxDailyBudget    float64  // GOOGLE_ADS_MAX_DAILY_BUDGET (currency units), default 50.0
 	MaxBidIncreasePct float64  // GOOGLE_ADS_MAX_BID_INCREASE_PCT, default 100
@@ -26,7 +26,7 @@ func defaultSafetyConfig() SafetyConfig {
 }
 
 // loadSafetyConfig builds a SafetyConfig from the environment, falling back to
-// the upstream defaults for anything unset or unparseable.
+// the built-in defaults for anything unset or unparseable.
 func loadSafetyConfig() SafetyConfig {
 	cfg := defaultSafetyConfig()
 	if v := strings.TrimSpace(os.Getenv("GOOGLE_ADS_MAX_DAILY_BUDGET")); v != "" {

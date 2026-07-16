@@ -7,9 +7,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/bidding.rs`: creating portfolio bidding
-// strategies and updating a keyword's CPC bid. Both are writes that preview
-// first; the keyword-bid update also enforces the bid-increase guard.
+// This file creates portfolio bidding strategies and updates keyword CPC bids.
+// Both writes preview first; the keyword-bid update also enforces the
+// bid-increase guard.
 
 var validStrategyTypes = map[string]bool{
 	"TARGET_CPA": true, "TARGET_ROAS": true, "TARGET_IMPRESSION_SHARE": true,

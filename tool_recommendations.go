@@ -8,10 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/recommendations.rs`: listing active
-// recommendations (read), plus applying and dismissing them (writes). Apply and
-// dismiss route through dedicated RPCs (not googleAds:mutate) via the confirm
-// flow's dispatch field.
+// This file lists active recommendations (read) and applies or dismisses them
+// (writes). Apply and dismiss route through dedicated RPCs (not
+// googleAds:mutate) via the confirm flow's dispatch field.
 
 // RecommendationsArgs lists active (non-dismissed) recommendations.
 type RecommendationsArgs struct {

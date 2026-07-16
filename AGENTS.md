@@ -1,9 +1,8 @@
 # AGENTS.md
 
-Google Ads MCP server + CLI, in Go. A Go port of the Rust
-[`FGRibreau/mcp-google-ads`](https://github.com/FGRibreau/mcp-google-ads).
-Single binary, all source in `package main` at the repo root (pgferry-style flat
-layout). The binary exposes two front-ends over one shared set of tool handlers:
+Google Ads MCP server + CLI, in Go. Single binary, all source in `package main`
+at the repo root. The binary exposes two front-ends over one shared set of tool
+handlers:
 
 - **CLI** — `goads login`, `goads search …`, `goads accounts`, `goads budget set …` (for humans,
   scripts, CI, and the agent skill that drives it via shell).
@@ -13,8 +12,7 @@ layout). The binary exposes two front-ends over one shared set of tool handlers:
 Each tool is defined once: a typed `Args` struct + a pure
 `func(ctx, *Client, Args) (Result, error)` handler. The CLI wires flags → handler;
 the MCP front-end registers the same handler with `mcp.AddTool`, which derives the
-JSON input schema from the `Args` struct by reflection (the replacement for Rust's
-`schemars`).
+JSON input schema from the `Args` struct by reflection.
 
 ## Commands
 
@@ -58,8 +56,5 @@ go test -tags integration -count=1 -v ./...
 
 ## Key references
 
-- **Continuing the port?** Start at `docs/REMAINING_WORK.md` (the agent playbook).
-- Port status & Rust→Go file mapping: `docs/PORTING.md`
-- Upstream Rust source: <https://github.com/FGRibreau/mcp-google-ads>
 - Google Ads REST API (v23): <https://developers.google.com/google-ads/api/rest/overview>
 - MCP Go SDK: <https://github.com/modelcontextprotocol/go-sdk>

@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/keywords.rs`: three read tools over keyword
-// data — performance (keyword_view), search terms (search_term_view), and
+// This file provides three read tools over keyword data: performance
+// (keyword_view), search terms (search_term_view), and
 // campaign-level negative keywords (campaign_criterion).
 
 // KeywordPerformanceArgs scopes keyword performance to an optional date window.

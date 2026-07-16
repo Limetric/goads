@@ -9,7 +9,6 @@ import (
 )
 
 // PolicyArgs lists ads with policy issues (disapproved, limited, under review).
-// Ports upstream `tools/policy.rs`.
 type PolicyArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
 }

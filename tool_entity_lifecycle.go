@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/entity_lifecycle.rs`: pause, enable, and
-// remove a campaign, ad group, ad, or keyword. All are writes that preview
-// first; remove is destructive and is flagged as such in the preview.
+// This file pauses, enables, and removes campaigns, ad groups, ads, or keywords.
+// All writes preview first; remove is destructive and is flagged as such in the
+// preview.
 
 var validEntityTypes = []string{"campaign", "ad_group", "ad", "keyword"}
 

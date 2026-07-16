@@ -53,8 +53,8 @@ func TestAPIError(t *testing.T) {
 		t.Errorf("structured error not surfaced: %v", jsonErr)
 	}
 	// Non-JSON body falls back to the raw text.
-	plain := apiError(500, []byte("upstream exploded"))
-	if !strings.Contains(plain.Error(), "500") || !strings.Contains(plain.Error(), "upstream exploded") {
+	plain := apiError(500, []byte("API exploded"))
+	if !strings.Contains(plain.Error(), "500") || !strings.Contains(plain.Error(), "API exploded") {
 		t.Errorf("plain-text fallback not surfaced: %v", plain)
 	}
 }

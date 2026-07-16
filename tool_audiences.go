@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/audiences.rs`: creating a custom audience and
-// attaching audience targeting to a campaign. Both preview first.
+// This file creates custom audiences and attaches audience targeting to
+// campaigns. Both operations preview first.
 
 var (
 	validAudienceTypes  = map[string]bool{"WEBSITE_VISITORS": true, "CUSTOMER_MATCH": true}

@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/assets.rs`: uploading reusable image, YouTube
-// video, and text assets. All are writes that preview first and apply on confirm.
+// This file uploads reusable image, YouTube video, and text assets. All are
+// writes that preview first and apply on confirm.
 
 // AssetImageArgs uploads a base64-encoded image asset.
 type AssetImageArgs struct {

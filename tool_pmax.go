@@ -7,8 +7,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// This file ports upstream `tools/pmax.rs`: creating a Performance Max campaign
-// as one atomic mutate batch using negative temp resource IDs (-1 budget,
+// This file creates a Performance Max campaign as one atomic mutate batch using
+// negative temp resource IDs (-1 budget,
 // -2 campaign, -3 asset group, -100.. text assets). Image assets are uploaded
 // separately via upload_image_asset.
 

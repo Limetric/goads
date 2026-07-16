@@ -4,8 +4,8 @@ import "testing"
 
 func TestCreateCustomAudience_Preview(t *testing.T) {
 	useTempState(t)
-	// customAudienceOperation is not an allowed mutate key, so we only exercise
-	// the preview path here (mirroring upstream's test coverage).
+	// customAudienceOperation is not an allowed mutate key, so this test only
+	// exercises the preview path.
 	prev, err := runCreateCustomAudience(t.Context(), nil, CreateAudienceArgs{
 		CustomerID: "123-456-7890", AudienceName: "My Audience", AudienceType: "WEBSITE_VISITORS",
 		URLsOrRules: []string{"example.com/products"},

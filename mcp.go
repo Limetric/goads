@@ -33,7 +33,7 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
-// registerTools wires every ported tool into the MCP server. Each tool's input
+// registerTools wires every tool into the MCP server. Each tool's input
 // schema is derived by reflection from its Args struct, so the struct tags in
 // tool_*.go are the single source of truth for the schema.
 //

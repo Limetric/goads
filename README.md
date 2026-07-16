@@ -4,7 +4,6 @@
 
 **Google Ads campaign management — a Go CLI and MCP server.**
 
-A Go port of the Rust [`FGRibreau/mcp-google-ads`](https://github.com/FGRibreau/mcp-google-ads).
 It talks to the Google Ads **REST API** (no gRPC, no protobuf codegen), and ships
 as a single binary with two front-ends over one shared set of tools:
 
@@ -106,7 +105,7 @@ codex plugin add goads@goads
 
 ## Tool coverage
 
-The full upstream tool set plus first-class App campaign creation is available
+Comprehensive campaign management plus first-class App campaign creation is available
 (47 MCP tools / equivalent CLI commands):
 
 - **Reads** — `search`, `report` (json/table/csv), `accounts`, `campaigns`, `ads`,
@@ -126,8 +125,7 @@ guard rails (spend cap, bid-increase limit, blocked-op list) are configurable vi
 `GOOGLE_ADS_MAX_DAILY_BUDGET`, `GOOGLE_ADS_MAX_BID_INCREASE_PCT`, and
 `GOOGLE_ADS_BLOCKED_OPS`. New campaigns/ad groups/ads ship **PAUSED** by default.
 
-See [`docs/PORTING.md`](docs/PORTING.md) for the Rust→Go mapping and
-[`AGENTS.md`](AGENTS.md) for the contributor workflow and conventions.
+See [`AGENTS.md`](AGENTS.md) for the contributor workflow and conventions.
 
 ## License
 

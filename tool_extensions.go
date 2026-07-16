@@ -8,8 +8,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// ExtensionsArgs lists campaign-level extensions (sitelinks, callouts,
-// structured snippets). Ports upstream `tools/extensions.rs::list_extensions`.
+// ExtensionsArgs lists campaign-level extensions (sitelinks, callouts, and
+// structured snippets).
 type ExtensionsArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
 }

@@ -10,7 +10,7 @@ import (
 )
 
 // ReportArgs runs an arbitrary GAQL query and renders the result in json (the
-// default), table, or csv form. It ports upstream `tools/reporting.rs::run_gaql`.
+// default), table, or csv form.
 type ReportArgs struct {
 	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
 	Query      string `json:"query" jsonschema:"the GAQL query to run, e.g. SELECT campaign.id, metrics.clicks FROM campaign"`
