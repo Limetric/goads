@@ -75,6 +75,69 @@ func TestUpdateCampaign_BiddingAndTargeting(t *testing.T) {
 	}
 }
 
+func TestApplyBiddingStrategyUpdate(t *testing.T) {
+	cases := []struct {
+		name      string
+		strategy  string
+		cpa, roas float64
+		wantKey   string
+		wantSub   map[string]any
+	}{
+		{"maximize conversions with cpa", "MAXIMIZE_CONVERSIONS", 5, 0, "maximizeConversions", map[string]any{"targetCpaMicros": "5000000"}},
+		{"maximize conversions without cpa", "MAXIMIZE_CONVERSIONS", 0, 0, "maximizeConversions", map[string]any{}},
+		{"maximize conversion value with roas", "MAXIMIZE_CONVERSION_VALUE", 0, 3.5, "maximizeConversionValue", map[string]any{"targetRoas": 3.5}},
+		{"maximize conversion value without roas", "MAXIMIZE_CONVERSION_VALUE", 0, 0, "maximizeConversionValue", map[string]any{}},
+		{"target cpa", "TARGET_CPA", 10, 0, "targetCpa", map[string]any{"targetCpaMicros": "10000000"}},
+		{"target roas", "TARGET_ROAS", 0, 2, "targetRoas", map[string]any{"targetRoas": 2.0}},
+		{"manual cpc", "MANUAL_CPC", 0, 0, "manualCpc", map[string]any{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			campaign := map[string]any{}
+			var mask []string
+			applyBiddingStrategyUpdate(campaign, &mask, tc.strategy, tc.cpa, tc.roas)
+			if len(mask) != 1 || mask[0] != tc.wantKey {
+				t.Fatalf("mask = %v, want [%s]", mask, tc.wantKey)
+			}
+			sub, _ := campaign[tc.wantKey].(map[string]any)
+			if sub == nil {
+				t.Fatalf("campaign[%s] missing: %v", tc.wantKey, campaign)
+			}
+			if len(sub) != len(tc.wantSub) {
+				t.Fatalf("campaign[%s] = %v, want %v", tc.wantKey, sub, tc.wantSub)
+			}
+			for k, want := range tc.wantSub {
+				if sub[k] != want {
+					t.Errorf("campaign[%s][%s] = %v, want %v", tc.wantKey, k, sub[k], want)
+				}
+			}
+		})
+	}
+
+	t.Run("target cpa/roas without a value change nothing", func(t *testing.T) {
+		for _, strategy := range []string{"TARGET_CPA", "TARGET_ROAS"} {
+			campaign := map[string]any{}
+			var mask []string
+			applyBiddingStrategyUpdate(campaign, &mask, strategy, 0, 0)
+			if len(campaign) != 0 || len(mask) != 0 {
+				t.Errorf("%s with zero value should be a no-op, got campaign=%v mask=%v", strategy, campaign, mask)
+			}
+		}
+	})
+
+	t.Run("unknown strategy falls back to biddingStrategyType", func(t *testing.T) {
+		campaign := map[string]any{}
+		var mask []string
+		applyBiddingStrategyUpdate(campaign, &mask, "TARGET_SPEND", 0, 0)
+		if campaign["biddingStrategyType"] != "TARGET_SPEND" {
+			t.Errorf("expected biddingStrategyType fallback, got %v", campaign)
+		}
+		if len(mask) != 1 || mask[0] != "biddingStrategyType" {
+			t.Errorf("mask = %v, want [biddingStrategyType]", mask)
+		}
+	})
+}
+
 func TestUpdateCampaign_NoChanges(t *testing.T) {
 	useTempState(t)
 	srv, _ := mutateServer(t)

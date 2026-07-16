@@ -407,3 +407,52 @@ func TestOfferToOpen_NoBrowserSkipsConfirm(t *testing.T) {
 		t.Errorf("--no-browser must not consume a confirm, ci=%d", p.ci)
 	}
 }
+
+func TestWizardGatherRefreshToken_AuthorizedUserShortcut(t *testing.T) {
+	creds := clientCreds{kind: "authorized_user", clientID: "id", clientSecret: "sec", refreshToken: "rt-existing"}
+	p := &fakePrompter{} // any prompt would panic — the shortcut must not prompt
+	rt, err := wizardGatherRefreshToken(t.Context(), p, io.Discard, creds, &Config{}, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rt != "rt-existing" {
+		t.Errorf("rt = %q, want rt-existing", rt)
+	}
+}
+
+func TestWizardGatherRefreshToken_ReuseExistingSignIn(t *testing.T) {
+	// Both an empty answer (the default) and anything starting with "r" reuse.
+	for _, answer := range []string{"", "reuse", "R"} {
+		p := &fakePrompter{lines: []string{answer}}
+		var out strings.Builder
+		rt, err := wizardGatherRefreshToken(t.Context(), p, &out, clientCreds{kind: "config"}, &Config{RefreshToken: "rt-cfg"}, nil, 0)
+		if err != nil {
+			t.Fatalf("answer %q: %v", answer, err)
+		}
+		if rt != "rt-cfg" {
+			t.Errorf("answer %q: rt = %q, want rt-cfg", answer, rt)
+		}
+		if !strings.Contains(out.String(), "reusing existing sign-in") {
+			t.Errorf("answer %q: expected reuse notice, got %q", answer, out.String())
+		}
+	}
+}
+
+func TestWizardGatherRefreshToken_PortBusy(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	port := ln.Addr().(*net.TCPAddr).Port
+
+	p := &fakePrompter{lines: []string{"new"}} // decline reuse → fresh sign-in
+	creds := clientCreds{kind: "config", clientID: "id", clientSecret: "sec"}
+	_, err = wizardGatherRefreshToken(t.Context(), p, io.Discard, creds, &Config{RefreshToken: "rt-cfg"}, nil, port)
+	if err == nil {
+		t.Fatal("expected an error when the loopback port is busy")
+	}
+	if !strings.Contains(err.Error(), "--port") {
+		t.Errorf("error should point at --port as the fix, got: %v", err)
+	}
+}

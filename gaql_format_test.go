@@ -75,6 +75,39 @@ func TestEnrichCostFields(t *testing.T) {
 	})
 }
 
+func TestResolveField(t *testing.T) {
+	row, ok := decodeRow(raw(`{"campaign":{"id":123456789012345,"name":"Test","active":true,"ratio":1.5,"labels":["a","b"],"empty":null}}`))
+	if !ok {
+		t.Fatal("decodeRow failed")
+	}
+	cases := []struct {
+		name, field, want string
+	}{
+		{"string", "campaign.name", "Test"},
+		{"large integer keeps precision", "campaign.id", "123456789012345"},
+		{"decimal number", "campaign.ratio", "1.5"},
+		{"bool", "campaign.active", "true"},
+		{"null", "campaign.empty", ""},
+		{"non-scalar marshals to json", "campaign.labels", `["a","b"]`},
+		{"missing leaf", "campaign.missing", ""},
+		{"missing root", "nope.field", ""},
+		{"path through a non-map", "campaign.name.deeper", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolveField(row, tc.field); got != tc.want {
+				t.Errorf("resolveField(%q) = %q, want %q", tc.field, got, tc.want)
+			}
+		})
+	}
+
+	t.Run("float64 value", func(t *testing.T) {
+		if got := resolveField(map[string]any{"v": 2.5}, "v"); got != "2.5" {
+			t.Errorf("resolveField(float64) = %q, want 2.5", got)
+		}
+	})
+}
+
 func TestFormatTable(t *testing.T) {
 	rows := []json.RawMessage{
 		raw(`{"campaign":{"id":"123","name":"Test"}}`),

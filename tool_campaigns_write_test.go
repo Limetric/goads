@@ -85,17 +85,55 @@ func TestDraftCampaign_DisplayChannelAdGroupType(t *testing.T) {
 func TestApplyBiddingStrategyCreate(t *testing.T) {
 	cases := []struct {
 		strategy, wantKey string
+		cpa, roas         float64
+		wantSub           map[string]any
 	}{
-		{"MANUAL_CPC", "manualCpc"},
-		{"MAXIMIZE_CLICKS", "targetSpend"},
-		{"TARGET_IMPRESSION_SHARE", "targetImpressionShare"},
-		{"PERCENT_CPC", "percentCpc"},
+		{"MANUAL_CPC", "manualCpc", 0, 0, map[string]any{}},
+		{"MAXIMIZE_CLICKS", "targetSpend", 0, 0, map[string]any{}},
+		{"TARGET_SPEND", "targetSpend", 0, 0, map[string]any{}},
+		{"TARGET_IMPRESSION_SHARE", "targetImpressionShare", 0, 0, map[string]any{}},
+		{"PERCENT_CPC", "percentCpc", 0, 0, map[string]any{}},
+		{"MAXIMIZE_CONVERSIONS", "maximizeConversions", 5, 0, map[string]any{"targetCpaMicros": "5000000"}},
+		{"MAXIMIZE_CONVERSIONS", "maximizeConversions", 0, 0, map[string]any{}},
+		{"MAXIMIZE_CONVERSION_VALUE", "maximizeConversionValue", 0, 4, map[string]any{"targetRoas": 4.0}},
+		{"MAXIMIZE_CONVERSION_VALUE", "maximizeConversionValue", 0, 0, map[string]any{}},
+		{"TARGET_CPA", "targetCpa", 2.5, 0, map[string]any{"targetCpaMicros": "2500000"}},
+		{"TARGET_ROAS", "targetRoas", 0, 3, map[string]any{"targetRoas": 3.0}},
 	}
 	for _, tc := range cases {
 		m := map[string]any{}
-		applyBiddingStrategyCreate(m, tc.strategy, 0, 0)
-		if _, ok := m[tc.wantKey]; !ok {
-			t.Errorf("%s should set %s, got %v", tc.strategy, tc.wantKey, m)
+		applyBiddingStrategyCreate(m, tc.strategy, tc.cpa, tc.roas)
+		sub, ok := m[tc.wantKey].(map[string]any)
+		if !ok {
+			t.Errorf("%s (cpa=%v roas=%v) should set %s, got %v", tc.strategy, tc.cpa, tc.roas, tc.wantKey, m)
+			continue
+		}
+		if len(sub) != len(tc.wantSub) {
+			t.Errorf("%s sub-field = %v, want %v", tc.strategy, sub, tc.wantSub)
+			continue
+		}
+		for k, want := range tc.wantSub {
+			if sub[k] != want {
+				t.Errorf("%s %s[%s] = %v, want %v", tc.strategy, tc.wantKey, k, sub[k], want)
+			}
 		}
 	}
+
+	t.Run("target strategies without a value leave bidding unset", func(t *testing.T) {
+		for _, strategy := range []string{"TARGET_CPA", "TARGET_ROAS"} {
+			m := map[string]any{}
+			applyBiddingStrategyCreate(m, strategy, 0, 0)
+			if len(m) != 0 {
+				t.Errorf("%s with zero value should leave bidding unset, got %v", strategy, m)
+			}
+		}
+	})
+
+	t.Run("unknown strategy leaves bidding unset", func(t *testing.T) {
+		m := map[string]any{}
+		applyBiddingStrategyCreate(m, "NOT_A_STRATEGY", 1, 1)
+		if len(m) != 0 {
+			t.Errorf("unknown strategy should leave bidding unset, got %v", m)
+		}
+	})
 }
