@@ -13,7 +13,7 @@ import (
 // tool, so it follows the confirm-token flow: the first call (Confirm == "")
 // stages a preview; the second call (Confirm == token) applies it.
 type BudgetSetArgs struct {
-	CustomerID   string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the budget"`
+	CustomerID   string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the budget; omit to use the configured default customer"`
 	BudgetID     string `json:"budget_id" jsonschema:"the campaign budget ID to update"`
 	AmountMicros int64  `json:"amount_micros" jsonschema:"the new daily budget in micros (1 unit of currency = 1,000,000 micros)"`
 	Confirm      string `json:"confirm,omitempty" jsonschema:"a confirm token returned by a previous preview call; omit to preview"`
@@ -38,8 +38,15 @@ func (a BudgetSetArgs) operations() []any {
 // preview/confirm helpers, so partial failures fail the apply (issue #7).
 func runBudgetSet(ctx context.Context, c *Client, args BudgetSetArgs) (WriteResult, error) {
 	const tool = "set_campaign_budget"
-	if args.CustomerID == "" || args.BudgetID == "" {
-		return WriteResult{}, fmt.Errorf("customer_id and budget_id are required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	// operations() builds resource names from args.CustomerID, so the resolved
+	// default has to land back in args.
+	args.CustomerID = cid
+	if args.BudgetID == "" {
+		return WriteResult{}, fmt.Errorf("budget_id is required")
 	}
 	// Blocked-op check runs before the confirm branch so an operation blocked
 	// between preview and confirm cannot still be applied with its token.
@@ -57,7 +64,6 @@ func runBudgetSet(ctx context.Context, c *Client, args BudgetSetArgs) (WriteResu
 	if err := checkBudgetCap(float64(args.AmountMicros)/1_000_000.0, cfg); err != nil {
 		return WriteResult{}, toolError(tool, err)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
 	if _, err := numericID("budget_id", args.BudgetID); err != nil {
 		return WriteResult{}, err
 	}
@@ -134,11 +140,10 @@ var budgetSetCmd = &cobra.Command{
 }
 
 func init() {
-	budgetSetCmd.Flags().StringVar(&budgetArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	budgetSetCmd.Flags().StringVar(&budgetArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	budgetSetCmd.Flags().StringVar(&budgetArgs.BudgetID, "budget-id", "", "campaign budget ID (required)")
 	budgetSetCmd.Flags().Int64Var(&budgetArgs.AmountMicros, "amount-micros", 0, "new daily budget in micros")
 	budgetSetCmd.Flags().StringVar(&budgetArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = budgetSetCmd.MarkFlagRequired("customer-id")
 	_ = budgetSetCmd.MarkFlagRequired("budget-id")
 	budgetCmd.AddCommand(budgetSetCmd)
 }

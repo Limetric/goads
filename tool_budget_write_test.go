@@ -47,6 +47,32 @@ func TestRunBudgetSet_PreviewThenApply(t *testing.T) {
 	}
 }
 
+func TestRunBudgetSet_UsesDefaultCustomerID(t *testing.T) {
+	// A write staged without an explicit customer_id must build its resource
+	// names from the configured default (issue #17) — operations() reads
+	// args.CustomerID, so the resolved default has to land back in args.
+	useTempState(t)
+	t.Setenv("GOOGLE_ADS_MAX_DAILY_BUDGET", "")
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	c.cfg.DefaultCustomerID = "9998887777"
+
+	args := BudgetSetArgs{BudgetID: "555", AmountMicros: 5_000_000}
+	prev, err := runBudgetSet(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	args.Confirm = prev.Token
+	if _, err := runBudgetSet(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	upd := opUpdate(t, cap.firstOp(t), "campaignBudgetOperation")
+	if upd["resourceName"] != "customers/9998887777/campaignBudgets/555" {
+		t.Errorf("resourceName = %v, want the default customer's budget", upd["resourceName"])
+	}
+}
+
 func TestRunBudgetSet_RequiresIDs(t *testing.T) {
 	if _, err := runBudgetSet(t.Context(), nil, BudgetSetArgs{BudgetID: "5", AmountMicros: 1_000_000}); err == nil {
 		t.Error("missing customer_id should error")

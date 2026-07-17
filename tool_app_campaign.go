@@ -12,7 +12,7 @@ import (
 // atomic batch. The campaign uses target CPA bidding because Google Ads models
 // target install cost through the target_cpa campaign bidding strategy.
 type CreateAppCampaignArgs struct {
-	CustomerID         string   `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the campaign"`
+	CustomerID         string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the campaign; omit to use the configured default customer"`
 	CampaignName       string   `json:"campaign_name" jsonschema:"the campaign name"`
 	DailyBudget        float64  `json:"daily_budget" jsonschema:"daily budget in currency units (capped by the budget guard)"`
 	AppID              string   `json:"app_id" jsonschema:"the Google Play package name, for example app.cloudmount"`
@@ -100,9 +100,9 @@ func runCreateAppCampaign(ctx context.Context, c *Client, args CreateAppCampaign
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if err := numericIDs("geo_target_id", args.GeoTargetIDs); err != nil {
 		return WriteResult{}, err
@@ -211,7 +211,7 @@ var campaignCreateAppCmd = &cobra.Command{
 
 func init() {
 	f := campaignCreateAppCmd.Flags()
-	f.StringVar(&createAppCampaignArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	f.StringVar(&createAppCampaignArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	f.StringVar(&createAppCampaignArgs.CampaignName, "name", "", "campaign name (required)")
 	f.Float64Var(&createAppCampaignArgs.DailyBudget, "daily-budget", 0, "daily budget in currency units (required)")
 	f.StringVar(&createAppCampaignArgs.AppID, "app-id", "", "Google Play package name (required)")
@@ -225,7 +225,6 @@ func init() {
 	f.StringVar(&createAppCampaignArgs.AdGroupName, "ad-group-name", "", "ad group name (defaults to Ad group 1)")
 	f.StringVar(&createAppCampaignArgs.Status, "status", "", "ENABLED or PAUSED (default)")
 	f.StringVar(&createAppCampaignArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = campaignCreateAppCmd.MarkFlagRequired("customer-id")
 	_ = campaignCreateAppCmd.MarkFlagRequired("name")
 	_ = campaignCreateAppCmd.MarkFlagRequired("daily-budget")
 	_ = campaignCreateAppCmd.MarkFlagRequired("app-id")

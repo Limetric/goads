@@ -3,14 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
 
 // AdsArgs is the input for the `ads` read tool, with an optional date window.
 type AdsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics; defaults to last 30 days"`
 	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics; defaults to last 30 days"`
 }
@@ -19,14 +18,23 @@ type AdsArgs struct {
 type AdsResult struct {
 	Ads        []json.RawMessage `json:"ads"`
 	TotalCount int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r AdsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.Ads, r.selectFields
 }
 
 // runAds returns ad-level performance for all non-removed ads, ordered by cost
 // descending, with cost fields enriched.
 func runAds(ctx context.Context, c *Client, args AdsArgs) (AdsResult, error) {
-	if args.CustomerID == "" {
-		return AdsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return AdsResult{}, err
 	}
+	args.CustomerID = cid
 	dates, err := andDateClause(args.DateStart, args.DateEnd)
 	if err != nil {
 		return AdsResult{}, err
@@ -48,12 +56,15 @@ func runAds(ctx context.Context, c *Client, args AdsArgs) (AdsResult, error) {
 		return AdsResult{}, toolError("ads", err)
 	}
 	rows = enrichCostFields(rows)
-	return AdsResult{Ads: rows, TotalCount: len(rows)}, nil
+	return AdsResult{Ads: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // --- CLI front-end ---
 
-var adsArgs AdsArgs
+var (
+	adsArgs   AdsArgs
+	adsFormat string
+)
 
 var adsCmd = &cobra.Command{
 	Use:   "ads",
@@ -68,13 +79,13 @@ var adsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), adsFormat, res)
 	},
 }
 
 func init() {
-	adsCmd.Flags().StringVar(&adsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	adsCmd.Flags().StringVar(&adsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	adsCmd.Flags().StringVar(&adsArgs.DateStart, "date-start", "", "start date YYYY-MM-DD (defaults to last 30 days)")
 	adsCmd.Flags().StringVar(&adsArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD (defaults to last 30 days)")
-	_ = adsCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(adsCmd, &adsFormat)
 }

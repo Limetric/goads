@@ -29,7 +29,7 @@ type SitelinkInput struct {
 
 // DraftSitelinksArgs drafts sitelink extensions for a campaign.
 type DraftSitelinksArgs struct {
-	CustomerID string          `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID string          `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID string          `json:"campaign_id" jsonschema:"the campaign ID to attach sitelinks to"`
 	Sitelinks  []SitelinkInput `json:"sitelinks" jsonschema:"the sitelinks to create"`
 	Confirm    string          `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -57,9 +57,9 @@ func runDraftSitelinks(ctx context.Context, c *Client, args DraftSitelinksArgs) 
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -92,7 +92,7 @@ func runDraftSitelinks(ctx context.Context, c *Client, args DraftSitelinksArgs) 
 
 // CreateCalloutsArgs drafts callout extensions for a campaign.
 type CreateCalloutsArgs struct {
-	CustomerID string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID string   `json:"campaign_id" jsonschema:"the campaign ID to attach callouts to"`
 	Callouts   []string `json:"callouts" jsonschema:"callout texts, each at most 25 characters"`
 	Confirm    string   `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -114,9 +114,9 @@ func runCreateCallouts(ctx context.Context, c *Client, args CreateCalloutsArgs) 
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -159,7 +159,7 @@ func sortedSnippetHeaders() []string {
 
 // CreateSnippetsArgs drafts a structured-snippet extension for a campaign.
 type CreateSnippetsArgs struct {
-	CustomerID string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID string   `json:"campaign_id" jsonschema:"the campaign ID to attach the snippet to"`
 	Header     string   `json:"header" jsonschema:"a predefined snippet header, e.g. Brands, Service catalog, Types"`
 	Values     []string `json:"values" jsonschema:"the snippet values"`
@@ -180,9 +180,9 @@ func runCreateStructuredSnippets(ctx context.Context, c *Client, args CreateSnip
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -206,7 +206,7 @@ func runCreateStructuredSnippets(ctx context.Context, c *Client, args CreateSnip
 
 // RemoveExtensionArgs removes a campaign asset (extension) — destructive.
 type RemoveExtensionArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID string `json:"campaign_id" jsonschema:"the campaign ID"`
 	AssetID    string `json:"asset_id" jsonschema:"the asset ID to unlink"`
 	FieldType  string `json:"field_type" jsonschema:"the extension field type, e.g. SITELINK, CALLOUT, STRUCTURED_SNIPPET"`
@@ -224,9 +224,9 @@ func runRemoveExtension(ctx context.Context, c *Client, args RemoveExtensionArgs
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -354,38 +354,34 @@ var extRemoveCmd = &cobra.Command{
 }
 
 func init() {
-	extSitelinkCmd.Flags().StringVar(&draftSitelinksArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	extSitelinkCmd.Flags().StringVar(&draftSitelinksArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	extSitelinkCmd.Flags().StringVar(&draftSitelinksArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	extSitelinkCmd.Flags().StringArrayVar(&sitelinkStrings, "sitelink", nil, "sitelink as linkText|finalURL|desc1|desc2 (repeatable, required)")
 	extSitelinkCmd.Flags().StringVar(&draftSitelinksArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = extSitelinkCmd.MarkFlagRequired("customer-id")
 	_ = extSitelinkCmd.MarkFlagRequired("campaign-id")
 	_ = extSitelinkCmd.MarkFlagRequired("sitelink")
 
-	extCalloutCmd.Flags().StringVar(&calloutsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	extCalloutCmd.Flags().StringVar(&calloutsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	extCalloutCmd.Flags().StringVar(&calloutsArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	extCalloutCmd.Flags().StringArrayVar(&calloutsArgs.Callouts, "callout", nil, "callout text (repeatable, required)")
 	extCalloutCmd.Flags().StringVar(&calloutsArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = extCalloutCmd.MarkFlagRequired("customer-id")
 	_ = extCalloutCmd.MarkFlagRequired("campaign-id")
 	_ = extCalloutCmd.MarkFlagRequired("callout")
 
-	extSnippetCmd.Flags().StringVar(&snippetsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	extSnippetCmd.Flags().StringVar(&snippetsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	extSnippetCmd.Flags().StringVar(&snippetsArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	extSnippetCmd.Flags().StringVar(&snippetsArgs.Header, "header", "", "snippet header, e.g. Brands (required)")
 	extSnippetCmd.Flags().StringArrayVar(&snippetsArgs.Values, "value", nil, "snippet value (repeatable, required)")
 	extSnippetCmd.Flags().StringVar(&snippetsArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = extSnippetCmd.MarkFlagRequired("customer-id")
 	_ = extSnippetCmd.MarkFlagRequired("campaign-id")
 	_ = extSnippetCmd.MarkFlagRequired("header")
 	_ = extSnippetCmd.MarkFlagRequired("value")
 
-	extRemoveCmd.Flags().StringVar(&removeExtArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	extRemoveCmd.Flags().StringVar(&removeExtArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	extRemoveCmd.Flags().StringVar(&removeExtArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	extRemoveCmd.Flags().StringVar(&removeExtArgs.AssetID, "asset-id", "", "asset ID (required)")
 	extRemoveCmd.Flags().StringVar(&removeExtArgs.FieldType, "field-type", "", "field type, e.g. SITELINK (required)")
 	extRemoveCmd.Flags().StringVar(&removeExtArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = extRemoveCmd.MarkFlagRequired("customer-id")
 	_ = extRemoveCmd.MarkFlagRequired("campaign-id")
 	_ = extRemoveCmd.MarkFlagRequired("asset-id")
 	_ = extRemoveCmd.MarkFlagRequired("field-type")

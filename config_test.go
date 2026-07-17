@@ -27,7 +27,8 @@ func clearAdsEnv(t *testing.T) {
 	t.Helper()
 	for _, k := range []string{
 		"GOOGLE_ADS_DEVELOPER_TOKEN", "GOOGLE_ADS_CLIENT_ID", "GOOGLE_ADS_CLIENT_SECRET",
-		"GOOGLE_ADS_REFRESH_TOKEN", "GOOGLE_ADS_LOGIN_CUSTOMER_ID", "GOOGLE_ADS_API_BASE_URL",
+		"GOOGLE_ADS_REFRESH_TOKEN", "GOOGLE_ADS_LOGIN_CUSTOMER_ID", "GOOGLE_ADS_CUSTOMER_ID",
+		"GOOGLE_ADS_API_BASE_URL",
 	} {
 		t.Setenv(k, "")
 	}
@@ -77,6 +78,73 @@ func TestLoadConfig_TOMLOverlaidByEnv(t *testing.T) {
 	}
 	if cfg.LoginCustomerID != "9999999999" {
 		t.Errorf("login id should be normalized: got %q", cfg.LoginCustomerID)
+	}
+}
+
+func TestLoadConfig_DefaultCustomerID(t *testing.T) {
+	clearAdsEnv(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("default_customer_id = \"111-111-1111\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := loadConfig(path)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.DefaultCustomerID != "1111111111" {
+		t.Errorf("file default should be normalized: got %q", cfg.DefaultCustomerID)
+	}
+
+	// The env var overrides the file and is normalized too.
+	t.Setenv("GOOGLE_ADS_CUSTOMER_ID", "222-222-2222")
+	cfg, err = loadConfig(path)
+	if err != nil {
+		t.Fatalf("loadConfig: %v", err)
+	}
+	if cfg.DefaultCustomerID != "2222222222" {
+		t.Errorf("env should override file: got %q", cfg.DefaultCustomerID)
+	}
+}
+
+func TestResolveCustomerID(t *testing.T) {
+	withDefault := &Client{cfg: &Config{DefaultCustomerID: "1111111111"}}
+	noDefault := &Client{cfg: &Config{}}
+
+	tests := []struct {
+		name     string
+		client   *Client
+		explicit string
+		want     string
+		wantErr  bool
+	}{
+		{name: "explicit wins over default", client: withDefault, explicit: "222-222-2222", want: "2222222222"},
+		{name: "default fills in", client: withDefault, want: "1111111111"},
+		{name: "blank explicit value counts as not given", client: withDefault, explicit: "   ", want: "1111111111"},
+		// A non-blank value that normalizes to nothing must error, never
+		// silently redirect the call to the default account.
+		{name: "garbage explicit value errors despite default", client: withDefault, explicit: "---", wantErr: true},
+		{name: "no default and no explicit errors", client: noDefault, wantErr: true},
+		{name: "nil client with explicit id", client: nil, explicit: "333-333-3333", want: "3333333333"},
+		{name: "nil client without explicit id errors", client: nil, wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := tt.client.resolveCustomerID(tt.explicit)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("resolveCustomerID(%q) should error, got %q", tt.explicit, got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("resolveCustomerID(%q): %v", tt.explicit, err)
+			}
+			if got != tt.want {
+				t.Errorf("resolveCustomerID(%q) = %q, want %q", tt.explicit, got, tt.want)
+			}
+		})
 	}
 }
 

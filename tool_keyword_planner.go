@@ -15,19 +15,39 @@ import (
 
 // DiscoverKeywordsArgs seeds keyword-idea discovery.
 type DiscoverKeywordsArgs struct {
-	CustomerID   string   `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID   string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	SeedKeywords []string `json:"seed_keywords" jsonschema:"seed keywords to expand into ideas, e.g. ['running shoes','trainers']"`
 }
 
 type DiscoverKeywordsResult struct {
 	KeywordIdeas []json.RawMessage `json:"keyword_ideas"`
 	TotalCount   int               `json:"total_count"`
+	// selectFields carries the column order for the CLI's --format table/csv
+	// rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r DiscoverKeywordsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.KeywordIdeas, r.selectFields
+}
+
+// keywordIdeaFields is the column set for keyword-idea rows. Ideas come from
+// generateKeywordIdeas (not GAQL), so the columns are fixed here rather than
+// parsed from a SELECT clause.
+var keywordIdeaFields = []string{
+	"text",
+	"keyword_idea_metrics.avg_monthly_searches",
+	"keyword_idea_metrics.competition",
+	"keyword_idea_metrics.low_top_of_page_bid_micros",
+	"keyword_idea_metrics.high_top_of_page_bid_micros",
 }
 
 func runDiscoverKeywords(ctx context.Context, c *Client, args DiscoverKeywordsArgs) (DiscoverKeywordsResult, error) {
-	if args.CustomerID == "" {
-		return DiscoverKeywordsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return DiscoverKeywordsResult{}, err
 	}
+	args.CustomerID = cid
 	if len(args.SeedKeywords) == 0 {
 		return DiscoverKeywordsResult{}, fmt.Errorf("at least one seed keyword is required")
 	}
@@ -35,12 +55,12 @@ func runDiscoverKeywords(ctx context.Context, c *Client, args DiscoverKeywordsAr
 	if err != nil {
 		return DiscoverKeywordsResult{}, toolError("keyword_ideas", err)
 	}
-	return DiscoverKeywordsResult{KeywordIdeas: rows, TotalCount: len(rows)}, nil
+	return DiscoverKeywordsResult{KeywordIdeas: rows, TotalCount: len(rows), selectFields: keywordIdeaFields}, nil
 }
 
 // KeywordForecastsArgs pulls recent historical metrics for specific keywords.
 type KeywordForecastsArgs struct {
-	CustomerID   string   `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID   string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	KeywordTexts []string `json:"keyword_texts" jsonschema:"the keyword texts to look up, e.g. ['running shoes']"`
 }
 
@@ -48,23 +68,35 @@ type KeywordForecastsResult struct {
 	KeywordForecasts []json.RawMessage `json:"keyword_forecasts"`
 	TotalCount       int               `json:"total_count"`
 	Message          string            `json:"message,omitempty"`
+	selectFields     []string
 }
 
+func (r KeywordForecastsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.KeywordForecasts, r.selectFields
+}
+
+// keywordForecastSelect is the SELECT clause for keyword forecasts, shared so
+// empty results still carry the column set for table/csv rendering.
+const keywordForecastSelect = "SELECT " +
+	"ad_group_criterion.keyword.text, metrics.average_cpc, metrics.impressions, " +
+	"metrics.clicks, metrics.cost_micros, metrics.average_cpm "
+
 func runKeywordForecasts(ctx context.Context, c *Client, args KeywordForecastsArgs) (KeywordForecastsResult, error) {
-	if args.CustomerID == "" {
-		return KeywordForecastsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return KeywordForecastsResult{}, err
 	}
+	args.CustomerID = cid
+	fields := parseSelectFields(keywordForecastSelect)
 	if len(args.KeywordTexts) == 0 {
-		return KeywordForecastsResult{KeywordForecasts: []json.RawMessage{}, TotalCount: 0, Message: "No keywords provided."}, nil
+		return KeywordForecastsResult{KeywordForecasts: []json.RawMessage{}, TotalCount: 0, Message: "No keywords provided.", selectFields: fields}, nil
 	}
 
 	quoted := make([]string, len(args.KeywordTexts))
 	for i, kw := range args.KeywordTexts {
 		quoted[i] = quoteGAQLString(kw)
 	}
-	query := "SELECT " +
-		"ad_group_criterion.keyword.text, metrics.average_cpc, metrics.impressions, " +
-		"metrics.clicks, metrics.cost_micros, metrics.average_cpm " +
+	query := keywordForecastSelect +
 		"FROM keyword_view WHERE ad_group_criterion.keyword.text IN (" + strings.Join(quoted, ", ") + ") " +
 		"AND segments.date DURING LAST_30_DAYS"
 
@@ -77,17 +109,20 @@ func runKeywordForecasts(ctx context.Context, c *Client, args KeywordForecastsAr
 			KeywordForecasts: []json.RawMessage{},
 			TotalCount:       0,
 			Message:          "No matching keywords found in the account. These keywords may not exist in any active ad group.",
+			selectFields:     fields,
 		}, nil
 	}
 	rows = enrichCostFields(rows)
-	return KeywordForecastsResult{KeywordForecasts: rows, TotalCount: len(rows)}, nil
+	return KeywordForecastsResult{KeywordForecasts: rows, TotalCount: len(rows), selectFields: fields}, nil
 }
 
 // --- CLI front-end ---
 
 var (
-	discoverArgs  DiscoverKeywordsArgs
-	forecastsArgs KeywordForecastsArgs
+	discoverArgs    DiscoverKeywordsArgs
+	discoverFormat  string
+	forecastsArgs   KeywordForecastsArgs
+	forecastsFormat string
 )
 
 var keywordIdeasCmd = &cobra.Command{
@@ -103,7 +138,7 @@ var keywordIdeasCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), discoverFormat, res)
 	},
 }
 
@@ -120,17 +155,17 @@ var keywordForecastsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), forecastsFormat, res)
 	},
 }
 
 func init() {
-	keywordIdeasCmd.Flags().StringVar(&discoverArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	keywordIdeasCmd.Flags().StringVar(&discoverArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	keywordIdeasCmd.Flags().StringSliceVar(&discoverArgs.SeedKeywords, "seed", nil, "seed keyword (repeatable)")
-	_ = keywordIdeasCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(keywordIdeasCmd, &discoverFormat)
 	_ = keywordIdeasCmd.MarkFlagRequired("seed")
 
-	keywordForecastsCmd.Flags().StringVar(&forecastsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	keywordForecastsCmd.Flags().StringVar(&forecastsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	keywordForecastsCmd.Flags().StringSliceVar(&forecastsArgs.KeywordTexts, "keyword", nil, "keyword text (repeatable)")
-	_ = keywordForecastsCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(keywordForecastsCmd, &forecastsFormat)
 }

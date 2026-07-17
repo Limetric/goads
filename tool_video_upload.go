@@ -13,7 +13,7 @@ import (
 // UploadYouTubeVideoArgs uploads a local MP4 to the Google-managed, unlisted
 // YouTube channel associated with the Ads account.
 type UploadYouTubeVideoArgs struct {
-	CustomerID  string `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the upload"`
+	CustomerID  string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the upload; omit to use the configured default customer"`
 	VideoFile   string `json:"video_file" jsonschema:"absolute path to the local MP4 file"`
 	Title       string `json:"title" jsonschema:"the YouTube video title"`
 	Description string `json:"description,omitempty" jsonschema:"the YouTube video description"`
@@ -44,13 +44,17 @@ func runUploadYouTubeVideo(ctx context.Context, c *Client, args UploadYouTubeVid
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
+	}
 	operation := map[string]any{
 		"file_path":   args.VideoFile,
 		"title":       args.Title,
 		"description": args.Description,
 	}
 	summary := fmt.Sprintf("Upload %q (%d bytes) to the Google-managed YouTube channel as UNLISTED", args.Title, info.Size())
-	pending, err := stageDispatch(tool, normalizeCustomerID(args.CustomerID), summary, dispatchYouTubeVideoUpload, []any{operation}, nil)
+	pending, err := stageDispatch(tool, cid, summary, dispatchYouTubeVideoUpload, []any{operation}, nil)
 	if err != nil {
 		return WriteResult{}, err
 	}
@@ -77,12 +81,11 @@ var assetUploadVideoCmd = &cobra.Command{
 }
 
 func init() {
-	assetUploadVideoCmd.Flags().StringVar(&uploadYouTubeVideoArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	assetUploadVideoCmd.Flags().StringVar(&uploadYouTubeVideoArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	assetUploadVideoCmd.Flags().StringVar(&uploadYouTubeVideoArgs.VideoFile, "video-file", "", "path to an MP4 file (required)")
 	assetUploadVideoCmd.Flags().StringVar(&uploadYouTubeVideoArgs.Title, "title", "", "YouTube video title (required)")
 	assetUploadVideoCmd.Flags().StringVar(&uploadYouTubeVideoArgs.Description, "description", "", "YouTube video description")
 	assetUploadVideoCmd.Flags().StringVar(&uploadYouTubeVideoArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = assetUploadVideoCmd.MarkFlagRequired("customer-id")
 	_ = assetUploadVideoCmd.MarkFlagRequired("video-file")
 	_ = assetUploadVideoCmd.MarkFlagRequired("title")
 

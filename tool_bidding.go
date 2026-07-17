@@ -19,7 +19,7 @@ var validStrategyTypes = map[string]bool{
 
 // PortfolioBiddingArgs creates a portfolio (shared) bidding strategy.
 type PortfolioBiddingArgs struct {
-	CustomerID   string  `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the strategy"`
+	CustomerID   string  `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the strategy; omit to use the configured default customer"`
 	Name         string  `json:"name" jsonschema:"a name for the bidding strategy"`
 	StrategyType string  `json:"strategy_type" jsonschema:"one of: TARGET_CPA, TARGET_ROAS, TARGET_IMPRESSION_SHARE"`
 	TargetCPA    float64 `json:"target_cpa,omitempty" jsonschema:"target CPA in currency units (required for TARGET_CPA)"`
@@ -61,18 +61,19 @@ func runCreatePortfolioBidding(ctx context.Context, c *Client, args PortfolioBid
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	if normalizeCustomerID(args.CustomerID) == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	op := map[string]any{"biddingStrategyOperation": map[string]any{"create": strategy}}
 	summary := fmt.Sprintf("Create %s portfolio bidding strategy %q", args.StrategyType, args.Name)
-	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, []any{op})
+	return previewMutate(tool, cid, summary, []any{op})
 }
 
 // UpdateKeywordBidArgs updates a keyword's CPC bid, enforcing the bid-increase
 // guard against the supplied current bid.
 type UpdateKeywordBidArgs struct {
-	CustomerID  string  `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the keyword"`
+	CustomerID  string  `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the keyword; omit to use the configured default customer"`
 	AdGroupID   string  `json:"ad_group_id" jsonschema:"the ad group ID"`
 	CriterionID string  `json:"criterion_id" jsonschema:"the keyword criterion ID"`
 	CurrentBid  float64 `json:"current_bid" jsonschema:"the current bid in currency units (for the safety check)"`
@@ -89,7 +90,10 @@ func runUpdateKeywordBid(ctx context.Context, c *Client, args UpdateKeywordBidAr
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
+	}
 	adGroupID, err := numericID("ad_group_id", args.AdGroupID)
 	if err != nil {
 		return WriteResult{}, err
@@ -208,23 +212,21 @@ var biddingKeywordBidCmd = &cobra.Command{
 }
 
 func init() {
-	biddingPortfolioCmd.Flags().StringVar(&portfolioArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	biddingPortfolioCmd.Flags().StringVar(&portfolioArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	biddingPortfolioCmd.Flags().StringVar(&portfolioArgs.Name, "name", "", "strategy name (required)")
 	biddingPortfolioCmd.Flags().StringVar(&portfolioArgs.StrategyType, "type", "", "TARGET_CPA, TARGET_ROAS, or TARGET_IMPRESSION_SHARE (required)")
 	biddingPortfolioCmd.Flags().Float64Var(&portfolioArgs.TargetCPA, "target-cpa", 0, "target CPA in currency units (TARGET_CPA)")
 	biddingPortfolioCmd.Flags().Float64Var(&portfolioArgs.TargetROAS, "target-roas", 0, "target ROAS ratio (TARGET_ROAS)")
 	biddingPortfolioCmd.Flags().StringVar(&portfolioArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = biddingPortfolioCmd.MarkFlagRequired("customer-id")
 	_ = biddingPortfolioCmd.MarkFlagRequired("name")
 	_ = biddingPortfolioCmd.MarkFlagRequired("type")
 
-	biddingKeywordBidCmd.Flags().StringVar(&keywordBidArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	biddingKeywordBidCmd.Flags().StringVar(&keywordBidArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	biddingKeywordBidCmd.Flags().StringVar(&keywordBidArgs.AdGroupID, "ad-group-id", "", "ad group ID (required)")
 	biddingKeywordBidCmd.Flags().StringVar(&keywordBidArgs.CriterionID, "criterion-id", "", "keyword criterion ID (required)")
 	biddingKeywordBidCmd.Flags().Float64Var(&keywordBidArgs.CurrentBid, "current-bid", 0, "current bid in currency units (for the safety check)")
 	biddingKeywordBidCmd.Flags().Float64Var(&keywordBidArgs.NewBid, "new-bid", 0, "new bid in currency units")
 	biddingKeywordBidCmd.Flags().StringVar(&keywordBidArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = biddingKeywordBidCmd.MarkFlagRequired("customer-id")
 	_ = biddingKeywordBidCmd.MarkFlagRequired("ad-group-id")
 	_ = biddingKeywordBidCmd.MarkFlagRequired("criterion-id")
 

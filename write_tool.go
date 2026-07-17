@@ -89,6 +89,13 @@ func applyConfirmed(ctx context.Context, c *Client, tool, confirm string) (Write
 	if p.Tool != tool {
 		return WriteResult{}, fmt.Errorf("confirmation token was issued by %q, not %q — the staged operation (%s) has been discarded; re-run the original command for a fresh preview", p.Tool, tool, p.Summary)
 	}
+	return applyConsumed(ctx, c, p)
+}
+
+// applyConsumed finishes a consumed pending write: it re-stages destructive
+// operations for their second confirmation, otherwise applies and audits.
+// Shared by the per-tool confirm path (applyConfirmed) and `goads confirm`.
+func applyConsumed(ctx context.Context, c *Client, p *PendingMutation) (WriteResult, error) {
 	// Destructive operations take two confirmations: the first consume
 	// re-stages under a fresh token instead of applying (issue #12).
 	if p.RequiresDouble && !p.DoubleConfirmed {
@@ -106,7 +113,7 @@ func applyConfirmed(ctx context.Context, c *Client, tool, confirm string) (Write
 	outcome, err := applyPending(ctx, c, p)
 	if err != nil {
 		auditLog(p, false)
-		return WriteResult{}, toolError(tool, err)
+		return WriteResult{}, toolError(p.Tool, err)
 	}
 	auditLog(p, true)
 	return WriteResult{

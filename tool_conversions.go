@@ -3,25 +3,33 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
 
 // ConversionsArgs lists the conversion actions configured in an account.
 type ConversionsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 }
 
 type ConversionsResult struct {
 	ConversionActions []json.RawMessage `json:"conversion_actions"`
 	TotalCount        int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r ConversionsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.ConversionActions, r.selectFields
 }
 
 func runConversions(ctx context.Context, c *Client, args ConversionsArgs) (ConversionsResult, error) {
-	if args.CustomerID == "" {
-		return ConversionsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return ConversionsResult{}, err
 	}
+	args.CustomerID = cid
 	query := "SELECT " +
 		"conversion_action.id, conversion_action.name, conversion_action.type, " +
 		"conversion_action.status, conversion_action.category, " +
@@ -33,10 +41,13 @@ func runConversions(ctx context.Context, c *Client, args ConversionsArgs) (Conve
 	if err != nil {
 		return ConversionsResult{}, toolError("conversions", err)
 	}
-	return ConversionsResult{ConversionActions: rows, TotalCount: len(rows)}, nil
+	return ConversionsResult{ConversionActions: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
-var conversionsArgs ConversionsArgs
+var (
+	conversionsArgs   ConversionsArgs
+	conversionsFormat string
+)
 
 var conversionsCmd = &cobra.Command{
 	Use:   "conversions",
@@ -51,11 +62,11 @@ var conversionsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), conversionsFormat, res)
 	},
 }
 
 func init() {
-	conversionsCmd.Flags().StringVar(&conversionsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
-	_ = conversionsCmd.MarkFlagRequired("customer-id")
+	conversionsCmd.Flags().StringVar(&conversionsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
+	addFormatFlag(conversionsCmd, &conversionsFormat)
 }

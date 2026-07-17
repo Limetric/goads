@@ -14,18 +14,27 @@ import (
 
 // RecommendationsArgs lists active (non-dismissed) recommendations.
 type RecommendationsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 }
 
 type RecommendationsResult struct {
 	Recommendations []json.RawMessage `json:"recommendations"`
 	TotalCount      int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r RecommendationsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.Recommendations, r.selectFields
 }
 
 func runListRecommendations(ctx context.Context, c *Client, args RecommendationsArgs) (RecommendationsResult, error) {
-	if args.CustomerID == "" {
-		return RecommendationsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return RecommendationsResult{}, err
 	}
+	args.CustomerID = cid
 	query := "SELECT " +
 		"recommendation.type, recommendation.impact, recommendation.campaign, recommendation.resource_name " +
 		"FROM recommendation WHERE recommendation.dismissed = FALSE LIMIT 50"
@@ -34,13 +43,13 @@ func runListRecommendations(ctx context.Context, c *Client, args Recommendations
 	if err != nil {
 		return RecommendationsResult{}, toolError("recommendations", err)
 	}
-	return RecommendationsResult{Recommendations: rows, TotalCount: len(rows)}, nil
+	return RecommendationsResult{Recommendations: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // RecommendationActionArgs applies or dismisses a single recommendation. It is
 // a write tool: omit Confirm to preview, pass the returned token to apply.
 type RecommendationActionArgs struct {
-	CustomerID       string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the recommendation"`
+	CustomerID       string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the recommendation; omit to use the configured default customer"`
 	RecommendationID string `json:"recommendation_id" jsonschema:"the recommendation ID to act on"`
 	Confirm          string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
 }
@@ -55,8 +64,13 @@ func runDismissRecommendation(ctx context.Context, c *Client, args Recommendatio
 
 // recommendationAction stages or applies an apply/dismiss recommendation write.
 func recommendationAction(ctx context.Context, c *Client, args RecommendationActionArgs, tool, dispatch string) (WriteResult, error) {
-	if args.CustomerID == "" || args.RecommendationID == "" {
-		return WriteResult{}, fmt.Errorf("customer_id and recommendation_id are required")
+	resolved, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
+	}
+	args.CustomerID = resolved
+	if args.RecommendationID == "" {
+		return WriteResult{}, fmt.Errorf("recommendation_id is required")
 	}
 	if err := checkBlockedOperation(tool, loadSafetyConfig()); err != nil {
 		return WriteResult{}, toolError(tool, err)
@@ -81,9 +95,10 @@ func recommendationAction(ctx context.Context, c *Client, args RecommendationAct
 // --- CLI front-end ---
 
 var (
-	recommendationsArgs RecommendationsArgs
-	applyRecArgs        RecommendationActionArgs
-	dismissRecArgs      RecommendationActionArgs
+	recommendationsArgs   RecommendationsArgs
+	recommendationsFormat string
+	applyRecArgs          RecommendationActionArgs
+	dismissRecArgs        RecommendationActionArgs
 )
 
 var recommendationsCmd = &cobra.Command{
@@ -104,7 +119,7 @@ var recommendationsListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), recommendationsFormat, res)
 	},
 }
 
@@ -143,17 +158,16 @@ var recommendationsDismissCmd = &cobra.Command{
 }
 
 func init() {
-	recommendationsListCmd.Flags().StringVar(&recommendationsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
-	_ = recommendationsListCmd.MarkFlagRequired("customer-id")
+	recommendationsListCmd.Flags().StringVar(&recommendationsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
+	addFormatFlag(recommendationsListCmd, &recommendationsFormat)
 
 	for _, b := range []struct {
 		cmd  *cobra.Command
 		args *RecommendationActionArgs
 	}{{recommendationsApplyCmd, &applyRecArgs}, {recommendationsDismissCmd, &dismissRecArgs}} {
-		b.cmd.Flags().StringVar(&b.args.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+		b.cmd.Flags().StringVar(&b.args.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 		b.cmd.Flags().StringVar(&b.args.RecommendationID, "recommendation-id", "", "recommendation ID (required)")
 		b.cmd.Flags().StringVar(&b.args.Confirm, "confirm", "", "confirm token from a previous preview")
-		_ = b.cmd.MarkFlagRequired("customer-id")
 		_ = b.cmd.MarkFlagRequired("recommendation-id")
 	}
 

@@ -68,7 +68,7 @@ func adGroupTypeForChannel(channelType string) string {
 // DraftCampaignArgs drafts a new campaign with budget, ad group, and optional
 // keywords. Defaults to PAUSED for safety.
 type DraftCampaignArgs struct {
-	CustomerID      string                 `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the campaign"`
+	CustomerID      string                 `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the campaign; omit to use the configured default customer"`
 	CampaignName    string                 `json:"campaign_name" jsonschema:"the campaign name"`
 	DailyBudget     float64                `json:"daily_budget" jsonschema:"daily budget in currency units (capped by the budget guard)"`
 	BiddingStrategy string                 `json:"bidding_strategy" jsonschema:"e.g. MAXIMIZE_CONVERSIONS, TARGET_CPA, MANUAL_CPC"`
@@ -93,9 +93,11 @@ func runDraftCampaign(ctx context.Context, c *Client, args DraftCampaignArgs) (W
 	// validates required fields itself: empty values used to stage malformed
 	// resource names that failed only at confirm time (issue #14).
 	if args.Confirm == "" {
-		if normalizeCustomerID(args.CustomerID) == "" {
-			return WriteResult{}, fmt.Errorf("customer_id is required")
+		resolved, err := c.resolveCustomerID(args.CustomerID)
+		if err != nil {
+			return WriteResult{}, err
 		}
+		args.CustomerID = resolved
 		if args.CampaignName == "" {
 			return WriteResult{}, fmt.Errorf("campaign_name is required")
 		}
@@ -255,7 +257,7 @@ var campaignCreateCmd = &cobra.Command{
 
 func init() {
 	f := campaignCreateCmd.Flags()
-	f.StringVar(&draftCampaignArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	f.StringVar(&draftCampaignArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	f.StringVar(&draftCampaignArgs.CampaignName, "name", "", "campaign name (required)")
 	f.Float64Var(&draftCampaignArgs.DailyBudget, "daily-budget", 0, "daily budget in currency units (required)")
 	f.StringVar(&draftCampaignArgs.BiddingStrategy, "bidding-strategy", "MAXIMIZE_CONVERSIONS", "bidding strategy")
@@ -268,7 +270,6 @@ func init() {
 	f.StringArrayVar(&draftCampaignArgs.LanguageIDs, "language-id", nil, "language constant ID (repeatable)")
 	f.StringVar(&draftCampaignArgs.Status, "status", "", "ENABLED, PAUSED (default), or REMOVED")
 	f.StringVar(&draftCampaignArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = campaignCreateCmd.MarkFlagRequired("customer-id")
 	_ = campaignCreateCmd.MarkFlagRequired("name")
 	_ = campaignCreateCmd.MarkFlagRequired("daily-budget")
 	_ = campaignCreateCmd.MarkFlagRequired("ad-group-name")

@@ -44,6 +44,7 @@ class Goads < Formula
     binary = Dir["goads-*"].first
     chmod 0755, binary
     bin.install binary => "goads"
+    generate_completions_from_executable(bin/"goads", "completion")
   end
 
   test do

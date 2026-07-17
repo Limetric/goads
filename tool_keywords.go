@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -14,7 +13,7 @@ import (
 
 // KeywordPerformanceArgs scopes keyword performance to an optional date window.
 type KeywordPerformanceArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics; defaults to last 30 days"`
 	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics; defaults to last 30 days"`
 }
@@ -22,12 +21,21 @@ type KeywordPerformanceArgs struct {
 type KeywordPerformanceResult struct {
 	Keywords   []json.RawMessage `json:"keywords"`
 	TotalCount int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r KeywordPerformanceResult) tableRows() ([]json.RawMessage, []string) {
+	return r.Keywords, r.selectFields
 }
 
 func runKeywordPerformance(ctx context.Context, c *Client, args KeywordPerformanceArgs) (KeywordPerformanceResult, error) {
-	if args.CustomerID == "" {
-		return KeywordPerformanceResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return KeywordPerformanceResult{}, err
 	}
+	args.CustomerID = cid
 	dates, err := andDateClause(args.DateStart, args.DateEnd)
 	if err != nil {
 		return KeywordPerformanceResult{}, err
@@ -46,13 +54,13 @@ func runKeywordPerformance(ctx context.Context, c *Client, args KeywordPerforman
 		return KeywordPerformanceResult{}, toolError("keywords", err)
 	}
 	rows = enrichCostFields(rows)
-	return KeywordPerformanceResult{Keywords: rows, TotalCount: len(rows)}, nil
+	return KeywordPerformanceResult{Keywords: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // SearchTermsArgs scopes the search-terms report to a date window (defaults to
 // the last 30 days when no explicit range is given).
 type SearchTermsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; defaults to last 30 days if omitted"`
 	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; defaults to last 30 days if omitted"`
 }
@@ -60,12 +68,21 @@ type SearchTermsArgs struct {
 type SearchTermsResult struct {
 	SearchTerms []json.RawMessage `json:"search_terms"`
 	TotalCount  int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r SearchTermsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.SearchTerms, r.selectFields
 }
 
 func runSearchTerms(ctx context.Context, c *Client, args SearchTermsArgs) (SearchTermsResult, error) {
-	if args.CustomerID == "" {
-		return SearchTermsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return SearchTermsResult{}, err
 	}
+	args.CustomerID = cid
 	where, err := dateRangeClause(args.DateStart, args.DateEnd)
 	if err != nil {
 		return SearchTermsResult{}, err
@@ -81,23 +98,32 @@ func runSearchTerms(ctx context.Context, c *Client, args SearchTermsArgs) (Searc
 		return SearchTermsResult{}, toolError("search_terms", err)
 	}
 	rows = enrichCostFields(rows)
-	return SearchTermsResult{SearchTerms: rows, TotalCount: len(rows)}, nil
+	return SearchTermsResult{SearchTerms: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // NegativeKeywordsArgs lists campaign-level negative keywords.
 type NegativeKeywordsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 }
 
 type NegativeKeywordsResult struct {
 	NegativeKeywords []json.RawMessage `json:"negative_keywords"`
 	TotalCount       int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r NegativeKeywordsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.NegativeKeywords, r.selectFields
 }
 
 func runNegativeKeywords(ctx context.Context, c *Client, args NegativeKeywordsArgs) (NegativeKeywordsResult, error) {
-	if args.CustomerID == "" {
-		return NegativeKeywordsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return NegativeKeywordsResult{}, err
 	}
+	args.CustomerID = cid
 	query := "SELECT " +
 		"campaign.id, campaign.name, campaign_criterion.keyword.text, " +
 		"campaign_criterion.keyword.match_type, campaign_criterion.negative, " +
@@ -109,15 +135,18 @@ func runNegativeKeywords(ctx context.Context, c *Client, args NegativeKeywordsAr
 	if err != nil {
 		return NegativeKeywordsResult{}, toolError("negative_keywords", err)
 	}
-	return NegativeKeywordsResult{NegativeKeywords: rows, TotalCount: len(rows)}, nil
+	return NegativeKeywordsResult{NegativeKeywords: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // --- CLI front-end ---
 
 var (
-	keywordPerfArgs KeywordPerformanceArgs
-	searchTermsArgs SearchTermsArgs
-	negKeywordsArgs NegativeKeywordsArgs
+	keywordPerfArgs   KeywordPerformanceArgs
+	keywordPerfFormat string
+	searchTermsArgs   SearchTermsArgs
+	searchTermsFormat string
+	negKeywordsArgs   NegativeKeywordsArgs
+	negKeywordsFormat string
 )
 
 var keywordsCmd = &cobra.Command{
@@ -138,7 +167,7 @@ var keywordsPerfCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), keywordPerfFormat, res)
 	},
 }
 
@@ -155,7 +184,7 @@ var searchTermsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), searchTermsFormat, res)
 	},
 }
 
@@ -172,23 +201,23 @@ var negativeKeywordsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), negKeywordsFormat, res)
 	},
 }
 
 func init() {
-	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.DateStart, "date-start", "", "start date YYYY-MM-DD (defaults to last 30 days)")
 	keywordsPerfCmd.Flags().StringVar(&keywordPerfArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD (defaults to last 30 days)")
-	_ = keywordsPerfCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(keywordsPerfCmd, &keywordPerfFormat)
 
-	searchTermsCmd.Flags().StringVar(&searchTermsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	searchTermsCmd.Flags().StringVar(&searchTermsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	searchTermsCmd.Flags().StringVar(&searchTermsArgs.DateStart, "date-start", "", "start date YYYY-MM-DD")
 	searchTermsCmd.Flags().StringVar(&searchTermsArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD")
-	_ = searchTermsCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(searchTermsCmd, &searchTermsFormat)
 
-	negativeKeywordsCmd.Flags().StringVar(&negKeywordsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
-	_ = negativeKeywordsCmd.MarkFlagRequired("customer-id")
+	negativeKeywordsCmd.Flags().StringVar(&negKeywordsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
+	addFormatFlag(negativeKeywordsCmd, &negKeywordsFormat)
 
 	keywordsCmd.AddCommand(keywordsPerfCmd, searchTermsCmd, negativeKeywordsCmd)
 }

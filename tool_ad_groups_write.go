@@ -13,7 +13,7 @@ import (
 
 // CreateAdGroupArgs drafts a new ad group in an existing campaign.
 type CreateAdGroupArgs struct {
-	CustomerID   string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID   string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID   string `json:"campaign_id" jsonschema:"the campaign ID the ad group belongs to"`
 	Name         string `json:"name" jsonschema:"the ad group name"`
 	CpcBidMicros int64  `json:"cpc_bid_micros,omitempty" jsonschema:"optional default CPC bid in micros"`
@@ -37,9 +37,9 @@ func runCreateAdGroup(ctx context.Context, c *Client, args CreateAdGroupArgs) (W
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -67,7 +67,7 @@ func runCreateAdGroup(ctx context.Context, c *Client, args CreateAdGroupArgs) (W
 // UpdateAdGroupArgs updates an existing ad group's name, CPC bid, and/or ad
 // rotation mode. At least one field must be provided.
 type UpdateAdGroupArgs struct {
-	CustomerID     string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the ad group"`
+	CustomerID     string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the ad group; omit to use the configured default customer"`
 	AdGroupID      string `json:"ad_group_id" jsonschema:"the ad group ID to update"`
 	Name           string `json:"name,omitempty" jsonschema:"new ad group name"`
 	CpcBidMicros   int64  `json:"cpc_bid_micros,omitempty" jsonschema:"new default CPC bid in micros"`
@@ -86,9 +86,9 @@ func runUpdateAdGroup(ctx context.Context, c *Client, args UpdateAdGroupArgs) (W
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
 		return WriteResult{}, err
@@ -163,24 +163,22 @@ var adGroupUpdateCmd = &cobra.Command{
 }
 
 func init() {
-	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.Name, "name", "", "ad group name (required)")
 	adGroupCreateCmd.Flags().Int64Var(&createAdGroupArgs.CpcBidMicros, "cpc-bid-micros", 0, "default CPC bid in micros")
 	adGroupCreateCmd.Flags().BoolVar(&createAdGroupArgs.OmitType, "omit-type", false, "omit ad group type (required for App campaigns)")
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.Status, "status", "", "ENABLED, PAUSED (default), or REMOVED")
 	adGroupCreateCmd.Flags().StringVar(&createAdGroupArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = adGroupCreateCmd.MarkFlagRequired("customer-id")
 	_ = adGroupCreateCmd.MarkFlagRequired("campaign-id")
 	_ = adGroupCreateCmd.MarkFlagRequired("name")
 
-	adGroupUpdateCmd.Flags().StringVar(&updateAdGroupArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	adGroupUpdateCmd.Flags().StringVar(&updateAdGroupArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	adGroupUpdateCmd.Flags().StringVar(&updateAdGroupArgs.AdGroupID, "ad-group-id", "", "ad group ID (required)")
 	adGroupUpdateCmd.Flags().StringVar(&updateAdGroupArgs.Name, "name", "", "new ad group name")
 	adGroupUpdateCmd.Flags().Int64Var(&updateAdGroupArgs.CpcBidMicros, "cpc-bid-micros", 0, "new default CPC bid in micros")
 	adGroupUpdateCmd.Flags().StringVar(&updateAdGroupArgs.AdRotationMode, "ad-rotation-mode", "", "OPTIMIZE or ROTATE_FOREVER")
 	adGroupUpdateCmd.Flags().StringVar(&updateAdGroupArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = adGroupUpdateCmd.MarkFlagRequired("customer-id")
 	_ = adGroupUpdateCmd.MarkFlagRequired("ad-group-id")
 
 	adGroupCmd.AddCommand(adGroupCreateCmd, adGroupUpdateCmd)

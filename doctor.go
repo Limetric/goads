@@ -36,6 +36,7 @@ var doctorCmd = &cobra.Command{
 		fmt.Fprintf(out, "client secret:      %s\n", present(cfg.ClientSecret))
 		fmt.Fprintf(out, "refresh token:      %s\n", present(cfg.RefreshToken))
 		fmt.Fprintf(out, "login customer id:  %s\n", orNone(cfg.LoginCustomerID))
+		fmt.Fprintf(out, "default customer:   %s\n", orNone(cfg.DefaultCustomerID))
 		if err := cfg.validate(); err != nil {
 			fmt.Fprintf(out, "\nstatus: NOT READY — %v\n", err)
 			return err

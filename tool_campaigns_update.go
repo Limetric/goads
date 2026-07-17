@@ -104,7 +104,7 @@ func resolveCampaignBudgetResource(ctx context.Context, c *Client, customerID, c
 // UpdateCampaignArgs updates an existing campaign's settings. Only the provided
 // fields change; at least one change must be specified.
 type UpdateCampaignArgs struct {
-	CustomerID      string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID      string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID      string   `json:"campaign_id" jsonschema:"the campaign ID to update"`
 	BiddingStrategy string   `json:"bidding_strategy,omitempty" jsonschema:"new bidding strategy, e.g. MAXIMIZE_CONVERSIONS"`
 	TargetCPA       float64  `json:"target_cpa,omitempty" jsonschema:"target CPA in currency units"`
@@ -125,9 +125,9 @@ func runUpdateCampaign(ctx context.Context, c *Client, args UpdateCampaignArgs) 
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	campaignID, err := numericID("campaign_id", args.CampaignID)
 	if err != nil {
@@ -217,7 +217,7 @@ var campaignUpdateCmd = &cobra.Command{
 
 func init() {
 	f := campaignUpdateCmd.Flags()
-	f.StringVar(&updateCampaignArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	f.StringVar(&updateCampaignArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	f.StringVar(&updateCampaignArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	f.StringVar(&updateCampaignArgs.BiddingStrategy, "bidding-strategy", "", "new bidding strategy")
 	f.Float64Var(&updateCampaignArgs.TargetCPA, "target-cpa", 0, "target CPA in currency units")
@@ -226,7 +226,6 @@ func init() {
 	f.StringArrayVar(&updateCampaignArgs.GeoTargetIDs, "geo-target-id", nil, "geo target constant ID to add (repeatable)")
 	f.StringArrayVar(&updateCampaignArgs.LanguageIDs, "language-id", nil, "language constant ID to add (repeatable)")
 	f.StringVar(&updateCampaignArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = campaignUpdateCmd.MarkFlagRequired("customer-id")
 	_ = campaignUpdateCmd.MarkFlagRequired("campaign-id")
 
 	campaignCmd.AddCommand(campaignUpdateCmd)

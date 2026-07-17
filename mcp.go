@@ -47,6 +47,10 @@ func registerTools(server *mcp.Server, client *Client) {
 		"List the Google Ads accounts accessible to the authenticated user.",
 		runAccounts)
 
+	addTool(server, client, "account_info",
+		"Show account details: descriptive name, currency code (which all *_micros cost fields are denominated in), time zone, and account flags.",
+		runAccountInfo)
+
 	addTool(server, client, "set_campaign_budget",
 		"Update a campaign's daily budget. Returns a preview + confirm token; pass Confirm to apply.",
 		runBudgetSet)
