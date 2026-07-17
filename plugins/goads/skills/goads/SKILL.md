@@ -23,7 +23,9 @@ not set — ask the user to provide them; do not invent values.
 ## Reading data (GAQL)
 
 `search` runs a [GAQL](https://developers.google.com/google-ads/api/docs/query/overview)
-query and prints result rows as JSON. Always pass `--customer-id`.
+query and prints result rows as JSON. Pass `--customer-id`, or omit it when a
+default is configured (`goads config show` reveals it; users set one with
+`goads config set-customer <id>` or `GOOGLE_ADS_CUSTOMER_ID`).
 
 ```bash
 goads search --customer-id 123-456-7890 \
@@ -34,8 +36,11 @@ goads search --customer-id 123-456-7890 \
 
 Tips:
 - Filter and aggregate with `jq` before summarizing — don't dump every row.
-- Costs are in **micros** (1,000,000 micros = 1 unit of currency).
+- Costs are in **micros** (1,000,000 micros = 1 unit of currency);
+  `goads accounts info` shows which currency the account uses.
 - `goads accounts` lists the customer IDs you can reach.
+- Read commands take `--format table|csv` when the user wants a table or
+  spreadsheet instead of JSON.
 
 ## Making changes (always previews first)
 
@@ -48,12 +53,15 @@ Show the preview to the user and get their go-ahead before confirming.
 goads budget set --customer-id 123-456-7890 --budget-id 555 --amount-micros 5000000
 
 # 2. Apply only after the user agrees
-goads budget set --customer-id 123-456-7890 --budget-id 555 --amount-micros 5000000 \
-  --confirm <token-from-step-1>
+goads confirm <token-from-step-1>
 ```
 
+(`goads confirm <token>` applies the staged change exactly as previewed;
+re-running the original command with `--confirm <token>` works too. Destructive
+operations return a second token that must be confirmed once more.)
+
 Never skip the preview, never guess a token, and never confirm a write the user
-hasn't approved.
+hasn't approved. `goads audit` lists every write goads has applied.
 
 ## Command reference
 
@@ -61,14 +69,16 @@ hasn't approved.
 
 | Command | What it shows |
 |---|---|
-| `search` / `report` | run a GAQL query (`report` adds `--format table\|csv`) |
-| `accounts` | accessible customer IDs |
+| `search` / `report` | run a GAQL query |
+| `accounts` / `accounts info` | accessible customer IDs / account name, currency, time zone |
 | `campaigns` / `ads` | campaign- / ad-level performance |
 | `keywords performance` / `keywords search-terms` / `keywords negative` | keyword metrics, search terms, negatives |
 | `geo search` / `geo performance` | find location IDs / geo performance |
 | `conversions` / `policy` / `extensions` | conversion actions / policy issues / extensions |
 | `keyword-ideas` / `keyword-forecasts` | Keyword Planner ideas / recent metrics |
 | `recommendations list` | active recommendations |
+| `audit` | log of applied writes |
+| `config show` / `config set-customer` | resolved config / set the default account |
 
 **Writes** (two-step preview → `--confirm <token>`):
 

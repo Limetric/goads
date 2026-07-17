@@ -11,7 +11,7 @@ import (
 // CampaignsArgs is the input for the `campaigns` read tool. An optional date
 // range narrows the performance metrics to a window; omit it for the last 30 days.
 type CampaignsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; pair with date_end to scope metrics; defaults to last 30 days"`
 	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; pair with date_start to scope metrics; defaults to last 30 days"`
 }
@@ -20,14 +20,23 @@ type CampaignsArgs struct {
 type CampaignsResult struct {
 	Campaigns  []json.RawMessage `json:"campaigns"`
 	TotalCount int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r CampaignsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.Campaigns, r.selectFields
 }
 
 // runCampaigns returns campaign-level performance for all non-removed campaigns,
 // ordered by cost descending, with cost and CPA fields enriched.
 func runCampaigns(ctx context.Context, c *Client, args CampaignsArgs) (CampaignsResult, error) {
-	if args.CustomerID == "" {
-		return CampaignsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return CampaignsResult{}, err
 	}
+	args.CustomerID = cid
 	dates, err := andDateClause(args.DateStart, args.DateEnd)
 	if err != nil {
 		return CampaignsResult{}, err
@@ -46,7 +55,7 @@ func runCampaigns(ctx context.Context, c *Client, args CampaignsArgs) (Campaigns
 		return CampaignsResult{}, toolError("campaigns", err)
 	}
 	rows = enrichCPA(enrichCostFields(rows))
-	return CampaignsResult{Campaigns: rows, TotalCount: len(rows)}, nil
+	return CampaignsResult{Campaigns: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // andDateClause returns an explicit date range when both dates are set and
@@ -94,7 +103,10 @@ func enrichCPA(rows []json.RawMessage) []json.RawMessage {
 
 // --- CLI front-end ---
 
-var campaignsArgs CampaignsArgs
+var (
+	campaignsArgs   CampaignsArgs
+	campaignsFormat string
+)
 
 var campaignsCmd = &cobra.Command{
 	Use:   "campaigns",
@@ -109,13 +121,13 @@ var campaignsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), campaignsFormat, res)
 	},
 }
 
 func init() {
-	campaignsCmd.Flags().StringVar(&campaignsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	campaignsCmd.Flags().StringVar(&campaignsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	campaignsCmd.Flags().StringVar(&campaignsArgs.DateStart, "date-start", "", "start date YYYY-MM-DD (defaults to last 30 days)")
 	campaignsCmd.Flags().StringVar(&campaignsArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD (defaults to last 30 days)")
-	_ = campaignsCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(campaignsCmd, &campaignsFormat)
 }

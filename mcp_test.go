@@ -71,8 +71,8 @@ func TestMCP_RegistrationIntegrity(t *testing.T) {
 			t.Errorf("MCP tool %q is not registered", want)
 		}
 	}
-	if len(names) != 47 {
-		t.Errorf("expected 47 registered MCP tools, got %d (update this count when adding/removing a tool)", len(names))
+	if len(names) != 48 {
+		t.Errorf("expected 48 registered MCP tools, got %d (update this count when adding/removing a tool)", len(names))
 	}
 }
 

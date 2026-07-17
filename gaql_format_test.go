@@ -2,8 +2,10 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func raw(s string) json.RawMessage { return json.RawMessage(s) }
@@ -106,6 +108,52 @@ func TestResolveField(t *testing.T) {
 			t.Errorf("resolveField(float64) = %q, want 2.5", got)
 		}
 	})
+
+	// GAQL SELECT paths are snake_case but REST rows carry camelCase keys —
+	// every segment must fall back to its camelCase form or built-in reads
+	// render blank cells for fields like metrics.cost_micros (issue #17).
+	t.Run("snake_case path resolves camelCase keys", func(t *testing.T) {
+		row := map[string]any{
+			"adGroupAd": map[string]any{"ad": map[string]any{"id": "42"}},
+			"metrics":   map[string]any{"costMicros": "5000000"},
+		}
+		if got := resolveField(row, "ad_group_ad.ad.id"); got != "42" {
+			t.Errorf("resolveField(ad_group_ad.ad.id) = %q, want 42", got)
+		}
+		if got := resolveField(row, "metrics.cost_micros"); got != "5000000" {
+			t.Errorf("resolveField(metrics.cost_micros) = %q, want 5000000", got)
+		}
+	})
+}
+
+func TestParseSelectFields_FromInsideFieldName(t *testing.T) {
+	// "FROM" as a substring of a field name must not terminate the SELECT
+	// clause — only the standalone FROM keyword does.
+	got := parseSelectFields("SELECT metrics.conversions_from_interactions_rate, campaign.id FROM campaign")
+	want := []string{"metrics.conversions_from_interactions_rate", "campaign.id"}
+	if len(got) != len(want) {
+		t.Fatalf("parseSelectFields = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("field[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestSnakeToCamel(t *testing.T) {
+	cases := map[string]string{
+		"cost_micros":          "costMicros",
+		"ad_group_ad":          "adGroupAd",
+		"metrics":              "metrics",
+		"avg_monthly_searches": "avgMonthlySearches",
+		"a__b":                 "aB",
+	}
+	for in, want := range cases {
+		if got := snakeToCamel(in); got != want {
+			t.Errorf("snakeToCamel(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestFormatTable(t *testing.T) {
@@ -120,6 +168,66 @@ func TestFormatTable(t *testing.T) {
 			t.Errorf("table missing %q:\n%s", want, table)
 		}
 	}
+}
+
+func TestFormatTable_UnicodeWidth(t *testing.T) {
+	// Column widths are measured in runes, not bytes: "Café" (5 bytes) must be
+	// padded like the 4-character cell it is, or every non-ASCII name pushes
+	// its column out of alignment (issue #17).
+	rows := []json.RawMessage{
+		raw(`{"campaign":{"name":"Café","id":"1"}}`),
+		raw(`{"campaign":{"name":"Shop","id":"2"}}`),
+	}
+	table := formatTable(rows, []string{"campaign.name", "campaign.id"})
+	lines := strings.Split(strings.TrimRight(table, "\n"), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("expected header+separator+2 rows, got %d lines:\n%s", len(lines), table)
+	}
+	// Visual alignment = equal rune count before the column separator.
+	prefixWidth := func(line string) int {
+		return utf8.RuneCountInString(line[:strings.Index(line, "|")])
+	}
+	cafe, shop := lines[2], lines[3]
+	if prefixWidth(cafe) != prefixWidth(shop) {
+		t.Errorf("columns misaligned for non-ASCII cell:\n%s", table)
+	}
+}
+
+// failingWriter always errors, standing in for a closed stdout.
+type failingWriter struct{}
+
+func (failingWriter) Write([]byte) (int, error) {
+	return 0, errFailingWriter
+}
+
+var errFailingWriter = errors.New("write failed")
+
+func TestPrintResult(t *testing.T) {
+	res := CampaignsResult{
+		Campaigns:    []json.RawMessage{raw(`{"campaign":{"id":"1"}}`)},
+		TotalCount:   1,
+		selectFields: []string{"campaign.id"},
+	}
+
+	t.Run("unknown format errors", func(t *testing.T) {
+		if err := printResult(&strings.Builder{}, "yaml", res); err == nil {
+			t.Error("unknown format should error")
+		}
+	})
+
+	t.Run("table on a non-row result errors", func(t *testing.T) {
+		if err := printResult(&strings.Builder{}, "table", struct{}{}); err == nil {
+			t.Error("non-rowSource result should reject table output")
+		}
+	})
+
+	t.Run("write failures propagate", func(t *testing.T) {
+		for _, format := range []string{"json", "table", "csv"} {
+			if err := printResult(failingWriter{}, format, res); err == nil {
+				t.Errorf("printResult(%s) should surface the write error", format)
+			}
+		}
+	})
 }
 
 func TestFormatTableEmpty(t *testing.T) {

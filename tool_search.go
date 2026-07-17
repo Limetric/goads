@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -11,7 +10,7 @@ import (
 // SearchArgs is the input for the `search` tool. Struct tags drive both the CLI
 // flags and (via reflection) the MCP JSON schema, so descriptions live here.
 type SearchArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	Query      string `json:"query" jsonschema:"the GAQL query to run, e.g. SELECT campaign.id, campaign.name FROM campaign"`
 }
 
@@ -20,13 +19,22 @@ type SearchResult struct {
 	CustomerID string            `json:"customer_id"`
 	RowCount   int               `json:"row_count"`
 	Rows       []json.RawMessage `json:"rows"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r SearchResult) tableRows() ([]json.RawMessage, []string) {
+	return r.Rows, r.selectFields
 }
 
 // runSearch is the shared handler used by both the CLI and the MCP server.
 func runSearch(ctx context.Context, c *Client, args SearchArgs) (SearchResult, error) {
-	if args.CustomerID == "" {
-		return SearchResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return SearchResult{}, err
 	}
+	args.CustomerID = cid
 	if err := validateGAQL(args.Query); err != nil {
 		return SearchResult{}, err
 	}
@@ -35,15 +43,19 @@ func runSearch(ctx context.Context, c *Client, args SearchArgs) (SearchResult, e
 		return SearchResult{}, toolError("search", err)
 	}
 	return SearchResult{
-		CustomerID: normalizeCustomerID(args.CustomerID),
-		RowCount:   len(rows),
-		Rows:       rows,
+		CustomerID:   normalizeCustomerID(args.CustomerID),
+		RowCount:     len(rows),
+		Rows:         rows,
+		selectFields: parseSelectFields(args.Query),
 	}, nil
 }
 
 // --- CLI front-end ---
 
-var searchArgs SearchArgs
+var (
+	searchArgs   SearchArgs
+	searchFormat string
+)
 
 var searchCmd = &cobra.Command{
 	Use:   "search",
@@ -58,13 +70,13 @@ var searchCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), searchFormat, res)
 	},
 }
 
 func init() {
-	searchCmd.Flags().StringVar(&searchArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	searchCmd.Flags().StringVar(&searchArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	searchCmd.Flags().StringVar(&searchArgs.Query, "query", "", "GAQL query (required)")
-	_ = searchCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(searchCmd, &searchFormat)
 	_ = searchCmd.MarkFlagRequired("query")
 }

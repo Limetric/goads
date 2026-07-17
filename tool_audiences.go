@@ -22,7 +22,7 @@ var (
 // not call yet. It errors at preview time instead of issuing a confirm token
 // that could never be applied (issue #9).
 type CreateAudienceArgs struct {
-	CustomerID   string   `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the audience"`
+	CustomerID   string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the audience; omit to use the configured default customer"`
 	AudienceName string   `json:"audience_name" jsonschema:"a name for the custom audience"`
 	AudienceType string   `json:"audience_type" jsonschema:"one of: WEBSITE_VISITORS, CUSTOMER_MATCH"`
 	URLsOrRules  []string `json:"urls_or_rules" jsonschema:"URL-contains patterns or matching rules for the audience"`
@@ -53,7 +53,7 @@ func runCreateCustomAudience(ctx context.Context, c *Client, args CreateAudience
 // AddAudienceTargetingArgs attaches an audience to a campaign in TARGETING or
 // OBSERVATION mode.
 type AddAudienceTargetingArgs struct {
-	CustomerID    string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID    string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID    string `json:"campaign_id" jsonschema:"the campaign ID to target"`
 	AudienceID    string `json:"audience_id" jsonschema:"the user list / audience ID to attach"`
 	TargetingMode string `json:"targeting_mode" jsonschema:"TARGETING (limit to audience) or OBSERVATION (monitor only)"`
@@ -71,9 +71,9 @@ func runAddAudienceTargeting(ctx context.Context, c *Client, args AddAudienceTar
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -140,22 +140,20 @@ var audienceTargetCmd = &cobra.Command{
 }
 
 func init() {
-	audienceCreateCmd.Flags().StringVar(&createAudienceArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	audienceCreateCmd.Flags().StringVar(&createAudienceArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	audienceCreateCmd.Flags().StringVar(&createAudienceArgs.AudienceName, "name", "", "audience name (required)")
 	audienceCreateCmd.Flags().StringVar(&createAudienceArgs.AudienceType, "type", "", "WEBSITE_VISITORS or CUSTOMER_MATCH (required)")
 	audienceCreateCmd.Flags().StringArrayVar(&createAudienceArgs.URLsOrRules, "rule", nil, "URL pattern or rule (repeatable, required)")
 	audienceCreateCmd.Flags().StringVar(&createAudienceArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = audienceCreateCmd.MarkFlagRequired("customer-id")
 	_ = audienceCreateCmd.MarkFlagRequired("name")
 	_ = audienceCreateCmd.MarkFlagRequired("type")
 	_ = audienceCreateCmd.MarkFlagRequired("rule")
 
-	audienceTargetCmd.Flags().StringVar(&addTargetingArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	audienceTargetCmd.Flags().StringVar(&addTargetingArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	audienceTargetCmd.Flags().StringVar(&addTargetingArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	audienceTargetCmd.Flags().StringVar(&addTargetingArgs.AudienceID, "audience-id", "", "audience/user list ID (required)")
 	audienceTargetCmd.Flags().StringVar(&addTargetingArgs.TargetingMode, "mode", "", "TARGETING or OBSERVATION (required)")
 	audienceTargetCmd.Flags().StringVar(&addTargetingArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = audienceTargetCmd.MarkFlagRequired("customer-id")
 	_ = audienceTargetCmd.MarkFlagRequired("campaign-id")
 	_ = audienceTargetCmd.MarkFlagRequired("audience-id")
 	_ = audienceTargetCmd.MarkFlagRequired("mode")

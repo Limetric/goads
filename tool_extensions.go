@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	"github.com/spf13/cobra"
 )
@@ -11,18 +10,27 @@ import (
 // ExtensionsArgs lists campaign-level extensions (sitelinks, callouts, and
 // structured snippets).
 type ExtensionsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 }
 
 type ExtensionsResult struct {
 	Extensions []json.RawMessage `json:"extensions"`
 	TotalCount int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r ExtensionsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.Extensions, r.selectFields
 }
 
 func runExtensions(ctx context.Context, c *Client, args ExtensionsArgs) (ExtensionsResult, error) {
-	if args.CustomerID == "" {
-		return ExtensionsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return ExtensionsResult{}, err
 	}
+	args.CustomerID = cid
 	query := "SELECT " +
 		"campaign_asset.campaign, campaign_asset.asset, campaign_asset.field_type, " +
 		"asset.name, asset.type, " +
@@ -34,10 +42,13 @@ func runExtensions(ctx context.Context, c *Client, args ExtensionsArgs) (Extensi
 	if err != nil {
 		return ExtensionsResult{}, toolError("extensions", err)
 	}
-	return ExtensionsResult{Extensions: rows, TotalCount: len(rows)}, nil
+	return ExtensionsResult{Extensions: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
-var extensionsArgs ExtensionsArgs
+var (
+	extensionsArgs   ExtensionsArgs
+	extensionsFormat string
+)
 
 var extensionsCmd = &cobra.Command{
 	Use:   "extensions",
@@ -52,11 +63,11 @@ var extensionsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), extensionsFormat, res)
 	},
 }
 
 func init() {
-	extensionsCmd.Flags().StringVar(&extensionsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
-	_ = extensionsCmd.MarkFlagRequired("customer-id")
+	extensionsCmd.Flags().StringVar(&extensionsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
+	addFormatFlag(extensionsCmd, &extensionsFormat)
 }

@@ -29,7 +29,7 @@ type KeywordWithMatchType struct {
 
 // DraftKeywordsArgs adds keywords to an ad group.
 type DraftKeywordsArgs struct {
-	CustomerID string                 `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the ad group"`
+	CustomerID string                 `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the ad group; omit to use the configured default customer"`
 	AdGroupID  string                 `json:"ad_group_id" jsonschema:"the ad group ID to add keywords to"`
 	Keywords   []KeywordWithMatchType `json:"keywords" jsonschema:"the keywords to add, each with a match type"`
 	Confirm    string                 `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -53,9 +53,9 @@ func runDraftKeywords(ctx context.Context, c *Client, args DraftKeywordsArgs) (W
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	adGroupID, err := numericID("ad_group_id", args.AdGroupID)
 	if err != nil {
@@ -121,7 +121,7 @@ func campaignBiddingStrategyForAdGroup(ctx context.Context, c *Client, customerI
 
 // AddNegativeKeywordsArgs adds campaign-level negative keywords.
 type AddNegativeKeywordsArgs struct {
-	CustomerID string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID string   `json:"campaign_id" jsonschema:"the campaign ID to add negatives to"`
 	Keywords   []string `json:"keywords" jsonschema:"the negative keyword texts"`
 	MatchType  string   `json:"match_type" jsonschema:"EXACT, PHRASE, or BROAD"`
@@ -142,9 +142,9 @@ func runAddNegativeKeywords(ctx context.Context, c *Client, args AddNegativeKeyw
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -169,7 +169,7 @@ func runAddNegativeKeywords(ctx context.Context, c *Client, args AddNegativeKeyw
 // RemoveKeywordsArgs removes keywords from an ad group by criterion ID
 // (destructive).
 type RemoveKeywordsArgs struct {
-	CustomerID   string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the ad group"`
+	CustomerID   string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the ad group; omit to use the configured default customer"`
 	AdGroupID    string   `json:"ad_group_id" jsonschema:"the ad group ID"`
 	CriterionIDs []string `json:"criterion_ids" jsonschema:"the keyword criterion IDs to remove"`
 	Confirm      string   `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -186,9 +186,9 @@ func runRemoveKeywords(ctx context.Context, c *Client, args RemoveKeywordsArgs) 
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
 		return WriteResult{}, err
@@ -211,7 +211,7 @@ func runRemoveKeywords(ctx context.Context, c *Client, args RemoveKeywordsArgs) 
 // RemoveNegativeKeywordsArgs removes campaign-level negative keywords by
 // criterion ID (destructive).
 type RemoveNegativeKeywordsArgs struct {
-	CustomerID   string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID   string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID   string   `json:"campaign_id" jsonschema:"the campaign ID"`
 	CriterionIDs []string `json:"criterion_ids" jsonschema:"the negative keyword criterion IDs to remove"`
 	Confirm      string   `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -228,9 +228,9 @@ func runRemoveNegativeKeywords(ctx context.Context, c *Client, args RemoveNegati
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -342,36 +342,32 @@ var keywordsRemoveNegativeCmd = &cobra.Command{
 }
 
 func init() {
-	keywordsAddCmd.Flags().StringVar(&draftKeywordsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	keywordsAddCmd.Flags().StringVar(&draftKeywordsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	keywordsAddCmd.Flags().StringVar(&draftKeywordsArgs.AdGroupID, "ad-group-id", "", "ad group ID (required)")
 	keywordsAddCmd.Flags().StringArrayVar(&draftKeywordStrings, "keyword", nil, "keyword as text|MATCHTYPE (repeatable, match type defaults to BROAD)")
 	keywordsAddCmd.Flags().StringVar(&draftKeywordsArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = keywordsAddCmd.MarkFlagRequired("customer-id")
 	_ = keywordsAddCmd.MarkFlagRequired("ad-group-id")
 	_ = keywordsAddCmd.MarkFlagRequired("keyword")
 
-	keywordsAddNegativeCmd.Flags().StringVar(&addNegArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	keywordsAddNegativeCmd.Flags().StringVar(&addNegArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	keywordsAddNegativeCmd.Flags().StringVar(&addNegArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	keywordsAddNegativeCmd.Flags().StringArrayVar(&addNegArgs.Keywords, "keyword", nil, "negative keyword text (repeatable, required)")
 	keywordsAddNegativeCmd.Flags().StringVar(&addNegArgs.MatchType, "match-type", "BROAD", "EXACT, PHRASE, or BROAD")
 	keywordsAddNegativeCmd.Flags().StringVar(&addNegArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = keywordsAddNegativeCmd.MarkFlagRequired("customer-id")
 	_ = keywordsAddNegativeCmd.MarkFlagRequired("campaign-id")
 	_ = keywordsAddNegativeCmd.MarkFlagRequired("keyword")
 
-	keywordsRemoveCmd.Flags().StringVar(&removeKwArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	keywordsRemoveCmd.Flags().StringVar(&removeKwArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	keywordsRemoveCmd.Flags().StringVar(&removeKwArgs.AdGroupID, "ad-group-id", "", "ad group ID (required)")
 	keywordsRemoveCmd.Flags().StringArrayVar(&removeKwArgs.CriterionIDs, "criterion-id", nil, "keyword criterion ID (repeatable, required)")
 	keywordsRemoveCmd.Flags().StringVar(&removeKwArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = keywordsRemoveCmd.MarkFlagRequired("customer-id")
 	_ = keywordsRemoveCmd.MarkFlagRequired("ad-group-id")
 	_ = keywordsRemoveCmd.MarkFlagRequired("criterion-id")
 
-	keywordsRemoveNegativeCmd.Flags().StringVar(&removeNegArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	keywordsRemoveNegativeCmd.Flags().StringVar(&removeNegArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	keywordsRemoveNegativeCmd.Flags().StringVar(&removeNegArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	keywordsRemoveNegativeCmd.Flags().StringArrayVar(&removeNegArgs.CriterionIDs, "criterion-id", nil, "negative keyword criterion ID (repeatable, required)")
 	keywordsRemoveNegativeCmd.Flags().StringVar(&removeNegArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = keywordsRemoveNegativeCmd.MarkFlagRequired("customer-id")
 	_ = keywordsRemoveNegativeCmd.MarkFlagRequired("campaign-id")
 	_ = keywordsRemoveNegativeCmd.MarkFlagRequired("criterion-id")
 

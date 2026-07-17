@@ -84,6 +84,39 @@ func checkBidIncrease(currentBid, proposedBid float64, cfg SafetyConfig) error {
 	return nil
 }
 
+// revalidateBudgetCaps re-checks the daily-budget cap for every staged
+// campaign-budget amount in a pending mutation's operations. `goads confirm`
+// runs it against the CURRENT configuration before consuming a token, so
+// tightening GOOGLE_ADS_MAX_DAILY_BUDGET between preview and confirm is
+// enforced on the generic confirm path just as re-running the original
+// command enforces it on the per-tool path.
+func revalidateBudgetCaps(ops []any, cfg SafetyConfig) error {
+	for _, op := range ops {
+		m, ok := op.(map[string]any)
+		if !ok {
+			continue
+		}
+		budgetOp, ok := m["campaignBudgetOperation"].(map[string]any)
+		if !ok {
+			continue
+		}
+		for _, verb := range []string{"create", "update"} {
+			body, ok := budgetOp[verb].(map[string]any)
+			if !ok {
+				continue
+			}
+			micros, ok := asFloat(body["amountMicros"])
+			if !ok {
+				continue
+			}
+			if err := checkBudgetCap(micros/1_000_000.0, cfg); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 // checkBlockedOperation rejects an operation present in the configured block list.
 func checkBlockedOperation(operation string, cfg SafetyConfig) error {
 	for _, b := range cfg.BlockedOperations {

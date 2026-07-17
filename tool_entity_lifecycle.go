@@ -60,7 +60,7 @@ func validateCompositeID(entityType, id string) error {
 
 // EntityActionArgs pauses, enables, or removes a single entity.
 type EntityActionArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the entity"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the entity; omit to use the configured default customer"`
 	EntityType string `json:"entity_type" jsonschema:"one of: campaign, ad_group, ad, keyword"`
 	EntityID   string `json:"entity_id" jsonschema:"the entity ID; for an ad or keyword this is the composite adGroupId~entityId (e.g. 111~222)"`
 	Confirm    string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -85,9 +85,9 @@ func entityStatusChange(ctx context.Context, c *Client, args EntityActionArgs, t
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	resource, opKey, err := entityResourceAndOp(cid, args.EntityType, args.EntityID)
 	if err != nil {
@@ -114,9 +114,9 @@ func runRemoveEntity(ctx context.Context, c *Client, args EntityActionArgs) (Wri
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	resource, opKey, err := entityResourceAndOp(cid, args.EntityType, args.EntityID)
 	if err != nil {
@@ -152,11 +152,10 @@ func entityCmd(use, short string, args *EntityActionArgs, run func(context.Conte
 			return printJSON(cmd.OutOrStdout(), res)
 		},
 	}
-	cmd.Flags().StringVar(&args.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	cmd.Flags().StringVar(&args.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	cmd.Flags().StringVar(&args.EntityType, "type", "", "entity type: campaign, ad_group, ad, or keyword (required)")
 	cmd.Flags().StringVar(&args.EntityID, "id", "", "entity ID (required)")
 	cmd.Flags().StringVar(&args.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = cmd.MarkFlagRequired("customer-id")
 	_ = cmd.MarkFlagRequired("type")
 	_ = cmd.MarkFlagRequired("id")
 	return cmd

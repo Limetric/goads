@@ -26,6 +26,10 @@ type Config struct {
 	// LoginCustomerID is the manager (MCC) account used for the
 	// `login-customer-id` header. Optional; dashes are stripped.
 	LoginCustomerID string `toml:"login_customer_id"`
+	// DefaultCustomerID is the customer ID used when a command/tool call does
+	// not pass one explicitly. Optional; dashes are stripped. Set it with
+	// `goads config set-customer` or GOOGLE_ADS_CUSTOMER_ID.
+	DefaultCustomerID string `toml:"default_customer_id"`
 	// BaseURL overrides the API base (default defaultBaseURL). Set this to an
 	// httptest server in tests, or to a regional endpoint if needed.
 	BaseURL string `toml:"base_url"`
@@ -57,6 +61,7 @@ func loadConfig(path string) (*Config, error) {
 func (cfg *Config) finalize() {
 	overlayEnv(cfg)
 	cfg.LoginCustomerID = normalizeCustomerID(cfg.LoginCustomerID)
+	cfg.DefaultCustomerID = normalizeCustomerID(cfg.DefaultCustomerID)
 	cfg.BaseURL = strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = defaultBaseURL
@@ -70,6 +75,7 @@ func overlayEnv(cfg *Config) {
 		"GOOGLE_ADS_CLIENT_SECRET":     &cfg.ClientSecret,
 		"GOOGLE_ADS_REFRESH_TOKEN":     &cfg.RefreshToken,
 		"GOOGLE_ADS_LOGIN_CUSTOMER_ID": &cfg.LoginCustomerID,
+		"GOOGLE_ADS_CUSTOMER_ID":       &cfg.DefaultCustomerID,
 		"GOOGLE_ADS_API_BASE_URL":      &cfg.BaseURL,
 	} {
 		if v := strings.TrimSpace(os.Getenv(env)); v != "" {

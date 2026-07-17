@@ -14,7 +14,7 @@ import (
 
 // AssetImageArgs uploads a base64-encoded image asset.
 type AssetImageArgs struct {
-	CustomerID      string `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the asset"`
+	CustomerID      string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the asset; omit to use the configured default customer"`
 	AssetName       string `json:"asset_name" jsonschema:"a name for the asset"`
 	ImageDataBase64 string `json:"image_data_base64" jsonschema:"the base64-encoded image bytes"`
 	Confirm         string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -34,6 +34,10 @@ func runUploadImageAsset(ctx context.Context, c *Client, args AssetImageArgs) (W
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
+	}
 	op := map[string]any{
 		"assetOperation": map[string]any{
 			"create": map[string]any{
@@ -44,12 +48,12 @@ func runUploadImageAsset(ctx context.Context, c *Client, args AssetImageArgs) (W
 		},
 	}
 	summary := fmt.Sprintf("Upload image asset %q (%d base64 bytes)", args.AssetName, len(args.ImageDataBase64))
-	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, []any{op})
+	return previewMutate(tool, cid, summary, []any{op})
 }
 
 // AssetYouTubeVideoArgs creates an asset that references an existing YouTube video.
 type AssetYouTubeVideoArgs struct {
-	CustomerID     string `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the asset"`
+	CustomerID     string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the asset; omit to use the configured default customer"`
 	AssetName      string `json:"asset_name" jsonschema:"a name for the asset"`
 	YouTubeVideoID string `json:"youtube_video_id" jsonschema:"the YouTube video ID to reference"`
 	Confirm        string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -69,6 +73,10 @@ func runUploadYouTubeVideoAsset(ctx context.Context, c *Client, args AssetYouTub
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
+	}
 	op := map[string]any{
 		"assetOperation": map[string]any{
 			"create": map[string]any{
@@ -80,12 +88,12 @@ func runUploadYouTubeVideoAsset(ctx context.Context, c *Client, args AssetYouTub
 		},
 	}
 	summary := fmt.Sprintf("Create YouTube video asset %q for video %s", args.AssetName, args.YouTubeVideoID)
-	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, []any{op})
+	return previewMutate(tool, cid, summary, []any{op})
 }
 
 // AssetTextArgs uploads a reusable text asset.
 type AssetTextArgs struct {
-	CustomerID  string `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the asset"`
+	CustomerID  string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the asset; omit to use the configured default customer"`
 	AssetName   string `json:"asset_name" jsonschema:"a name for the asset"`
 	TextContent string `json:"text_content" jsonschema:"the text content of the asset"`
 	Confirm     string `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -105,6 +113,10 @@ func runUploadTextAsset(ctx context.Context, c *Client, args AssetTextArgs) (Wri
 	if args.Confirm != "" {
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
+	}
 	op := map[string]any{
 		"assetOperation": map[string]any{
 			"create": map[string]any{
@@ -114,7 +126,7 @@ func runUploadTextAsset(ctx context.Context, c *Client, args AssetTextArgs) (Wri
 		},
 	}
 	summary := fmt.Sprintf("Upload text asset %q", args.AssetName)
-	return previewMutate(tool, normalizeCustomerID(args.CustomerID), summary, []any{op})
+	return previewMutate(tool, cid, summary, []any{op})
 }
 
 // --- CLI front-end ---
@@ -190,27 +202,24 @@ var assetYouTubeVideoCmd = &cobra.Command{
 }
 
 func init() {
-	assetImageCmd.Flags().StringVar(&assetImageArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	assetImageCmd.Flags().StringVar(&assetImageArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	assetImageCmd.Flags().StringVar(&assetImageArgs.AssetName, "name", "", "asset name (required)")
 	assetImageCmd.Flags().StringVar(&assetImageArgs.ImageDataBase64, "image-base64", "", "base64-encoded image data (alternative to --image-file)")
 	assetImageCmd.Flags().StringVar(&assetImageFile, "image-file", "", "path to an image file (alternative to --image-base64)")
 	assetImageCmd.Flags().StringVar(&assetImageArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = assetImageCmd.MarkFlagRequired("customer-id")
 	_ = assetImageCmd.MarkFlagRequired("name")
 
-	assetYouTubeVideoCmd.Flags().StringVar(&assetYouTubeVideoArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	assetYouTubeVideoCmd.Flags().StringVar(&assetYouTubeVideoArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	assetYouTubeVideoCmd.Flags().StringVar(&assetYouTubeVideoArgs.AssetName, "name", "", "asset name (required)")
 	assetYouTubeVideoCmd.Flags().StringVar(&assetYouTubeVideoArgs.YouTubeVideoID, "youtube-video-id", "", "YouTube video ID (required)")
 	assetYouTubeVideoCmd.Flags().StringVar(&assetYouTubeVideoArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = assetYouTubeVideoCmd.MarkFlagRequired("customer-id")
 	_ = assetYouTubeVideoCmd.MarkFlagRequired("name")
 	_ = assetYouTubeVideoCmd.MarkFlagRequired("youtube-video-id")
 
-	assetTextCmd.Flags().StringVar(&assetTextArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	assetTextCmd.Flags().StringVar(&assetTextArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	assetTextCmd.Flags().StringVar(&assetTextArgs.AssetName, "name", "", "asset name (required)")
 	assetTextCmd.Flags().StringVar(&assetTextArgs.TextContent, "text", "", "text content (required)")
 	assetTextCmd.Flags().StringVar(&assetTextArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = assetTextCmd.MarkFlagRequired("customer-id")
 	_ = assetTextCmd.MarkFlagRequired("name")
 	_ = assetTextCmd.MarkFlagRequired("text")
 

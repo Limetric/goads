@@ -45,6 +45,7 @@ func TestGenerateHomebrewFormula(t *testing.T) {
 		`binary = Dir["goads-*"].first`,
 		`chmod 0755, binary`,
 		`bin.install binary => "goads"`,
+		`generate_completions_from_executable(bin/"goads", "completion")`,
 		`system "#{bin}/goads", "version"`,
 	}
 

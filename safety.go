@@ -146,21 +146,50 @@ func validToken(s string) bool {
 	return true
 }
 
+// pendingPath validates a caller-supplied token and returns the path of its
+// pending file. The shape check runs before the token can touch the
+// filesystem (issue #6).
+func pendingPath(token string) (string, error) {
+	if token == "" {
+		return "", fmt.Errorf("no confirmation token provided")
+	}
+	if !validToken(token) {
+		return "", fmt.Errorf("malformed confirmation token %q — expected the 16-character token from the preview", token)
+	}
+	dir, err := stateDir()
+	if err != nil {
+		return "", fmt.Errorf("confirmation store unavailable: %w", err)
+	}
+	return filepath.Join(dir, "pending-"+token+".json"), nil
+}
+
+// peekMutation loads a pending mutation by token WITHOUT consuming it, so
+// pre-checks (e.g. blocked operations) can fail before the single-use token
+// is irrevocably claimed.
+func peekMutation(token string) (*PendingMutation, error) {
+	path, err := pendingPath(strings.TrimSpace(token))
+	if err != nil {
+		return nil, err
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("unknown or already-used confirmation token %q", strings.TrimSpace(token))
+	}
+	var p PendingMutation
+	if err := json.Unmarshal(data, &p); err != nil {
+		return nil, fmt.Errorf("corrupt confirmation %q: %w", strings.TrimSpace(token), err)
+	}
+	return &p, nil
+}
+
 // consumeMutation loads and deletes a pending mutation by token, rejecting
 // unknown or expired tokens.
 func consumeMutation(token string) (*PendingMutation, error) {
 	token = strings.TrimSpace(token)
-	if token == "" {
-		return nil, fmt.Errorf("no confirmation token provided")
-	}
-	if !validToken(token) {
-		return nil, fmt.Errorf("malformed confirmation token %q — expected the 16-character token from the preview", token)
-	}
-	dir, err := stateDir()
+	path, err := pendingPath(token)
 	if err != nil {
-		return nil, fmt.Errorf("confirmation store unavailable: %w", err)
+		return nil, err
 	}
-	path := filepath.Join(dir, "pending-"+token+".json")
 	// Claim the pending file atomically before reading: two concurrent
 	// confirms must not both apply the same staged mutation (issue #6). Only
 	// the rename winner proceeds; the file stays single-use even if the apply
@@ -272,7 +301,7 @@ func (p *PendingMutation) previewText() string {
 	fmt.Fprintf(&b, "PREVIEW — %s on customer %s\n", p.Tool, p.CustomerID)
 	fmt.Fprintf(&b, "%s\n", p.Summary)
 	fmt.Fprintf(&b, "%d operation(s) staged. Nothing has been changed yet.\n", len(p.Operations))
-	fmt.Fprintf(&b, "\nTo apply, re-run with: --confirm %s\n", p.Token)
+	fmt.Fprintf(&b, "\nTo apply, re-run with --confirm %s (or run: goads confirm %s)\n", p.Token, p.Token)
 	return b.String()
 }
 

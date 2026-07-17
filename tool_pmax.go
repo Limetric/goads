@@ -15,7 +15,7 @@ import (
 // CreatePmaxArgs creates a Performance Max campaign. start_paused defaults to
 // true (the campaign and asset group ship PAUSED unless explicitly enabled).
 type CreatePmaxArgs struct {
-	CustomerID      string   `json:"customer_id" jsonschema:"the Google Ads customer ID that will own the campaign"`
+	CustomerID      string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that will own the campaign; omit to use the configured default customer"`
 	CampaignName    string   `json:"campaign_name" jsonschema:"the campaign name"`
 	DailyBudget     float64  `json:"daily_budget" jsonschema:"daily budget in currency units (capped by the budget guard)"`
 	BiddingStrategy string   `json:"bidding_strategy" jsonschema:"MAXIMIZE_CONVERSIONS, MAXIMIZE_CONVERSION_VALUE, or TARGET_CPA"`
@@ -74,9 +74,9 @@ func runCreatePmaxCampaign(ctx context.Context, c *Client, args CreatePmaxArgs) 
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if args.CampaignName == "" {
 		return WriteResult{}, fmt.Errorf("campaign_name is required")
@@ -228,7 +228,7 @@ var pmaxCreateCmd = &cobra.Command{
 
 func init() {
 	f := pmaxCreateCmd.Flags()
-	f.StringVar(&pmaxArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	f.StringVar(&pmaxArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	f.StringVar(&pmaxArgs.CampaignName, "name", "", "campaign name (required)")
 	f.Float64Var(&pmaxArgs.DailyBudget, "daily-budget", 0, "daily budget in currency units (required)")
 	f.StringVar(&pmaxArgs.BiddingStrategy, "bidding-strategy", "MAXIMIZE_CONVERSIONS", "MAXIMIZE_CONVERSIONS, MAXIMIZE_CONVERSION_VALUE, or TARGET_CPA")
@@ -240,7 +240,6 @@ func init() {
 	f.StringArrayVar(&pmaxArgs.GeoTargetIDs, "geo-target-id", nil, "geo target constant ID (repeatable)")
 	f.BoolVar(&pmaxStartPaused, "start-paused", true, "start the campaign PAUSED (default true)")
 	f.StringVar(&pmaxArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = pmaxCreateCmd.MarkFlagRequired("customer-id")
 	_ = pmaxCreateCmd.MarkFlagRequired("name")
 	_ = pmaxCreateCmd.MarkFlagRequired("daily-budget")
 	_ = pmaxCreateCmd.MarkFlagRequired("business-name")

@@ -47,14 +47,33 @@ build/goads search --customer-id 123-456-7890 \
   --query 'SELECT campaign.id, campaign.name FROM campaign LIMIT 10' | jq
 ```
 
+Work with one account most of the time? Set a default once and drop
+`--customer-id` everywhere (any explicit flag still wins):
+
+```bash
+goads config set-customer 123-456-7890   # or: export GOOGLE_ADS_CUSTOMER_ID=123-456-7890
+goads campaigns                          # uses the default account
+goads config show                        # see the resolved config (secrets redacted)
+```
+
+Read commands print JSON by default; pass `--format table` or `--format csv`
+for human- or spreadsheet-friendly output (`campaigns`, `ads`, `keywords …`,
+`search`, `report`, and the other row-returning reads all take it):
+
+```bash
+goads campaigns --format table
+```
+
 Writes preview first, then apply with the returned token:
 
 ```bash
-build/goads budget set --customer-id 123-456-7890 --budget-id 555 --amount-micros 5000000
+goads budget set --budget-id 555 --amount-micros 5000000
 # → prints a preview and a confirm token, e.g. a1b2c3d4e5f6a7b8
-build/goads budget set --customer-id 123-456-7890 --budget-id 555 --amount-micros 5000000 \
-  --confirm a1b2c3d4e5f6a7b8
+goads confirm a1b2c3d4e5f6a7b8   # applies the staged change as previewed
+goads audit                      # log of every write goads has applied
 ```
+
+(Re-running the original command with `--confirm <token>` still works too.)
 
 ## As an MCP server
 
@@ -106,12 +125,13 @@ codex plugin add goads@goads
 ## Tool coverage
 
 Comprehensive campaign management plus first-class App campaign creation is available
-(47 MCP tools / equivalent CLI commands):
+(48 MCP tools / equivalent CLI commands):
 
-- **Reads** — `search`, `report` (json/table/csv), `accounts`, `campaigns`, `ads`,
-  keyword performance / search terms / negatives, `geo` search + performance,
-  `conversions`, `policy`, `extensions`, Keyword Planner ideas + forecasts, and
-  recommendations listing.
+- **Reads** — `search`, `report`, `accounts` (+ `accounts info` for currency/time
+  zone), `campaigns`, `ads`, keyword performance / search terms / negatives,
+  `geo` search + performance, `conversions`, `policy`, `extensions`, Keyword
+  Planner ideas + forecasts, and recommendations listing. Row-returning reads
+  render as `--format json|table|csv`.
 - **Writes** (all preview-then-confirm) — Search, App, and Performance Max
   campaign create/update, ad group
   create/update, RSA drafting, keyword add/remove (+ negatives), bidding
@@ -119,11 +139,29 @@ Comprehensive campaign management plus first-class App campaign creation is avai
   image/text assets, ad scheduling, Performance Max campaigns, pause/enable/remove,
   and recommendation apply/dismiss.
 
-Write safety: every mutation previews first and applies only on `--confirm`; a
-client-side allow-list rejects invalid `googleAds:mutate` operation keys; and
-guard rails (spend cap, bid-increase limit, blocked-op list) are configurable via
-`GOOGLE_ADS_MAX_DAILY_BUDGET`, `GOOGLE_ADS_MAX_BID_INCREASE_PCT`, and
-`GOOGLE_ADS_BLOCKED_OPS`. New campaigns/ad groups/ads ship **PAUSED** by default.
+Write safety: every mutation previews first and applies only on confirm
+(`goads confirm <token>` or re-running with `--confirm`); `goads audit` shows
+every applied write; a client-side allow-list rejects invalid `googleAds:mutate`
+operation keys; and guard rails (spend cap, bid-increase limit, blocked-op list)
+are configurable via `GOOGLE_ADS_MAX_DAILY_BUDGET`,
+`GOOGLE_ADS_MAX_BID_INCREASE_PCT`, and `GOOGLE_ADS_BLOCKED_OPS`. New
+campaigns/ad groups/ads ship **PAUSED** by default.
+
+## Shell completion
+
+Homebrew installs completions automatically. For a manual install, `goads
+completion` generates the script for your shell:
+
+```bash
+# bash (requires bash-completion)
+goads completion bash > /usr/local/etc/bash_completion.d/goads
+
+# zsh
+goads completion zsh > "${fpath[1]}/_goads"
+
+# fish
+goads completion fish > ~/.config/fish/completions/goads.fish
+```
 
 See [`AGENTS.md`](AGENTS.md) for the contributor workflow and conventions.
 

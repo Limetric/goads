@@ -12,7 +12,7 @@ import (
 // ReportArgs runs an arbitrary GAQL query and renders the result in json (the
 // default), table, or csv form.
 type ReportArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	Query      string `json:"query" jsonschema:"the GAQL query to run, e.g. SELECT campaign.id, metrics.clicks FROM campaign"`
 	Format     string `json:"format,omitempty" jsonschema:"output format: json (default), table, or csv"`
 }
@@ -28,9 +28,11 @@ type ReportResult struct {
 
 // runReport executes the query and shapes the output per Format.
 func runReport(ctx context.Context, c *Client, args ReportArgs) (ReportResult, error) {
-	if args.CustomerID == "" {
-		return ReportResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return ReportResult{}, err
 	}
+	args.CustomerID = cid
 	if err := validateGAQL(args.Query); err != nil {
 		return ReportResult{}, err
 	}
@@ -79,9 +81,8 @@ var reportCmd = &cobra.Command{
 }
 
 func init() {
-	reportCmd.Flags().StringVar(&reportArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	reportCmd.Flags().StringVar(&reportArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	reportCmd.Flags().StringVar(&reportArgs.Query, "query", "", "GAQL query (required)")
 	reportCmd.Flags().StringVar(&reportArgs.Format, "format", "json", "output format: json, table, or csv")
-	_ = reportCmd.MarkFlagRequired("customer-id")
 	_ = reportCmd.MarkFlagRequired("query")
 }

@@ -4,14 +4,21 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 // This file provides GAQL result-shaping helpers: SELECT-field extraction,
 // micros→human cost enrichment, table/CSV rendering, a date WHERE-clause
 // builder, and GAQL error hints. They operate on the
 // []json.RawMessage rows returned by Client.Search.
+
+// fromKeywordRe locates the FROM clause keyword as a standalone token, so
+// field names that merely contain "from" (e.g.
+// metrics.conversions_from_interactions_rate) don't truncate the SELECT list.
+var fromKeywordRe = regexp.MustCompile(`(?i)\bFROM\b`)
 
 // parseSelectFields extracts the field names from a GAQL query's SELECT clause.
 //
@@ -23,9 +30,9 @@ func parseSelectFields(query string) []string {
 		return nil
 	}
 	start := sel + len("SELECT")
-	end := strings.Index(upper, "FROM")
-	if end < 0 || end < start {
-		end = len(query)
+	end := len(query)
+	if loc := fromKeywordRe.FindStringIndex(query[start:]); loc != nil {
+		end = start + loc[0]
 	}
 	var fields []string
 	for _, f := range strings.Split(query[start:end], ",") {
@@ -157,8 +164,29 @@ func asFloat(v any) (float64, bool) {
 	return 0, false
 }
 
+// snakeToCamel converts a GAQL path segment to the camelCase key the REST API
+// uses in result rows ("cost_micros" -> "costMicros", "ad_group" -> "adGroup").
+func snakeToCamel(s string) string {
+	if !strings.Contains(s, "_") {
+		return s
+	}
+	parts := strings.Split(s, "_")
+	var b strings.Builder
+	b.WriteString(parts[0])
+	for _, p := range parts[1:] {
+		if p == "" {
+			continue
+		}
+		b.WriteString(strings.ToUpper(p[:1]))
+		b.WriteString(p[1:])
+	}
+	return b.String()
+}
+
 // resolveField resolves a dotted field path inside a decoded row, returning a
-// flat string cell. Missing paths resolve to "".
+// flat string cell. Fields are GAQL snake_case paths while REST rows carry
+// camelCase keys, so each segment is tried verbatim and camelCased. Missing
+// paths resolve to "".
 func resolveField(row any, field string) string {
 	cur := row
 	for _, part := range strings.Split(field, ".") {
@@ -166,10 +194,13 @@ func resolveField(row any, field string) string {
 		if !ok {
 			return ""
 		}
-		cur, ok = m[part]
+		v, ok := m[part]
 		if !ok {
-			return ""
+			if v, ok = m[snakeToCamel(part)]; !ok {
+				return ""
+			}
 		}
+		cur = v
 	}
 	switch v := cur.(type) {
 	case string:
@@ -196,7 +227,7 @@ func formatTable(rows []json.RawMessage, fields []string) string {
 	}
 	widths := make([]int, len(fields))
 	for i, f := range fields {
-		widths[i] = len(f)
+		widths[i] = displayWidth(f)
 	}
 	cells := make([][]string, len(rows))
 	for ri, r := range rows {
@@ -205,8 +236,8 @@ func formatTable(rows []json.RawMessage, fields []string) string {
 		for ci, f := range fields {
 			val := resolveField(v, f)
 			row[ci] = val
-			if len(val) > widths[ci] {
-				widths[ci] = len(val)
+			if w := displayWidth(val); w > widths[ci] {
+				widths[ci] = w
 			}
 		}
 		cells[ri] = row
@@ -238,11 +269,19 @@ func formatTable(rows []json.RawMessage, fields []string) string {
 	return b.String()
 }
 
+// displayWidth measures a cell in runes, not bytes, so non-ASCII campaign
+// names don't skew column padding (issue #17). Double-width (CJK) runes still
+// count as one column — a known approximation that avoids a width-table
+// dependency.
+func displayWidth(s string) int {
+	return utf8.RuneCountInString(s)
+}
+
 func padRight(s string, w int) string {
-	if len(s) >= w {
-		return s
+	if d := displayWidth(s); d < w {
+		return s + strings.Repeat(" ", w-d)
 	}
-	return s + strings.Repeat(" ", w-len(s))
+	return s
 }
 
 // formatCSV renders rows as CSV over the given fields, RFC-4180 quoting cells

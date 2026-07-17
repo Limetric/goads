@@ -29,7 +29,7 @@ type ScheduleEntry struct {
 
 // SetScheduleArgs sets one or more ad schedules on a campaign.
 type SetScheduleArgs struct {
-	CustomerID string          `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the campaign"`
+	CustomerID string          `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the campaign; omit to use the configured default customer"`
 	CampaignID string          `json:"campaign_id" jsonschema:"the campaign ID to schedule"`
 	Schedules  []ScheduleEntry `json:"schedules" jsonschema:"the ad-schedule windows to set"`
 	Confirm    string          `json:"confirm,omitempty" jsonschema:"a confirm token from a previous preview; omit to preview"`
@@ -84,9 +84,9 @@ func runSetCampaignSchedule(ctx context.Context, c *Client, args SetScheduleArgs
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("campaign_id", args.CampaignID); err != nil {
 		return WriteResult{}, err
@@ -168,10 +168,9 @@ var scheduleCmd = &cobra.Command{
 }
 
 func init() {
-	scheduleCmd.Flags().StringVar(&scheduleArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	scheduleCmd.Flags().StringVar(&scheduleArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	scheduleCmd.Flags().StringVar(&scheduleArgs.CampaignID, "campaign-id", "", "campaign ID (required)")
 	scheduleCmd.Flags().StringArrayVar(&scheduleStrings, "schedule", nil, "schedule window DAY,startHour,startMinute,endHour,endMinute (repeatable)")
 	scheduleCmd.Flags().StringVar(&scheduleArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = scheduleCmd.MarkFlagRequired("customer-id")
 	_ = scheduleCmd.MarkFlagRequired("campaign-id")
 }

@@ -14,19 +14,28 @@ import (
 
 // GeoTargetsArgs searches geo target constants whose name matches a substring.
 type GeoTargetsArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	Query      string `json:"query" jsonschema:"a location name substring to search for, e.g. 'California'"`
 }
 
 type GeoTargetsResult struct {
 	GeoTargets []json.RawMessage `json:"geo_targets"`
 	TotalCount int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r GeoTargetsResult) tableRows() ([]json.RawMessage, []string) {
+	return r.GeoTargets, r.selectFields
 }
 
 func runGeoTargets(ctx context.Context, c *Client, args GeoTargetsArgs) (GeoTargetsResult, error) {
-	if args.CustomerID == "" {
-		return GeoTargetsResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return GeoTargetsResult{}, err
 	}
+	args.CustomerID = cid
 	if strings.TrimSpace(args.Query) == "" {
 		return GeoTargetsResult{}, fmt.Errorf("query is required")
 	}
@@ -44,13 +53,13 @@ func runGeoTargets(ctx context.Context, c *Client, args GeoTargetsArgs) (GeoTarg
 	if err != nil {
 		return GeoTargetsResult{}, toolError("geo_targets", err)
 	}
-	return GeoTargetsResult{GeoTargets: rows, TotalCount: len(rows)}, nil
+	return GeoTargetsResult{GeoTargets: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // GeoPerformanceArgs reports geographic performance, defaulting to the last 30
 // days when no explicit date range is supplied.
 type GeoPerformanceArgs struct {
-	CustomerID string `json:"customer_id" jsonschema:"the Google Ads customer ID to query (dashes optional)"`
+	CustomerID string `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID to query (dashes optional); omit to use the configured default customer"`
 	DateStart  string `json:"date_start,omitempty" jsonschema:"start date YYYY-MM-DD; defaults to last 30 days if omitted"`
 	DateEnd    string `json:"date_end,omitempty" jsonschema:"end date YYYY-MM-DD; defaults to last 30 days if omitted"`
 }
@@ -58,12 +67,21 @@ type GeoPerformanceArgs struct {
 type GeoPerformanceResult struct {
 	GeoPerformance []json.RawMessage `json:"geo_performance"`
 	TotalCount     int               `json:"total_count"`
+	// selectFields carries the SELECT column order for the CLI's --format
+	// table/csv rendering; unexported so JSON/MCP output is unchanged.
+	selectFields []string
+}
+
+func (r GeoPerformanceResult) tableRows() ([]json.RawMessage, []string) {
+	return r.GeoPerformance, r.selectFields
 }
 
 func runGeoPerformance(ctx context.Context, c *Client, args GeoPerformanceArgs) (GeoPerformanceResult, error) {
-	if args.CustomerID == "" {
-		return GeoPerformanceResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return GeoPerformanceResult{}, err
 	}
+	args.CustomerID = cid
 	where, err := dateRangeClause(args.DateStart, args.DateEnd)
 	if err != nil {
 		return GeoPerformanceResult{}, err
@@ -79,14 +97,16 @@ func runGeoPerformance(ctx context.Context, c *Client, args GeoPerformanceArgs) 
 		return GeoPerformanceResult{}, toolError("geo_performance", err)
 	}
 	rows = enrichCostFields(rows)
-	return GeoPerformanceResult{GeoPerformance: rows, TotalCount: len(rows)}, nil
+	return GeoPerformanceResult{GeoPerformance: rows, TotalCount: len(rows), selectFields: parseSelectFields(query)}, nil
 }
 
 // --- CLI front-end ---
 
 var (
-	geoTargetsArgs GeoTargetsArgs
-	geoPerfArgs    GeoPerformanceArgs
+	geoTargetsArgs   GeoTargetsArgs
+	geoTargetsFormat string
+	geoPerfArgs      GeoPerformanceArgs
+	geoPerfFormat    string
 )
 
 var geoCmd = &cobra.Command{
@@ -107,7 +127,7 @@ var geoSearchCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), geoTargetsFormat, res)
 	},
 }
 
@@ -124,20 +144,20 @@ var geoPerfCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printJSON(cmd.OutOrStdout(), res)
+		return printResult(cmd.OutOrStdout(), geoPerfFormat, res)
 	},
 }
 
 func init() {
-	geoSearchCmd.Flags().StringVar(&geoTargetsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	geoSearchCmd.Flags().StringVar(&geoTargetsArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	geoSearchCmd.Flags().StringVar(&geoTargetsArgs.Query, "query", "", "location name substring (required)")
-	_ = geoSearchCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(geoSearchCmd, &geoTargetsFormat)
 	_ = geoSearchCmd.MarkFlagRequired("query")
 
-	geoPerfCmd.Flags().StringVar(&geoPerfArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	geoPerfCmd.Flags().StringVar(&geoPerfArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	geoPerfCmd.Flags().StringVar(&geoPerfArgs.DateStart, "date-start", "", "start date YYYY-MM-DD")
 	geoPerfCmd.Flags().StringVar(&geoPerfArgs.DateEnd, "date-end", "", "end date YYYY-MM-DD")
-	_ = geoPerfCmd.MarkFlagRequired("customer-id")
+	addFormatFlag(geoPerfCmd, &geoPerfFormat)
 
 	geoCmd.AddCommand(geoSearchCmd, geoPerfCmd)
 }

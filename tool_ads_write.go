@@ -13,7 +13,7 @@ import (
 // DraftRsaArgs drafts a Responsive Search Ad in an ad group. RSAs need 3-15
 // headlines (<=30 chars) and 2-4 descriptions (<=90 chars).
 type DraftRsaArgs struct {
-	CustomerID   string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the ad group"`
+	CustomerID   string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the ad group; omit to use the configured default customer"`
 	AdGroupID    string   `json:"ad_group_id" jsonschema:"the ad group ID to create the ad in"`
 	Headlines    []string `json:"headlines" jsonschema:"3-15 headlines, each at most 30 characters"`
 	Descriptions []string `json:"descriptions" jsonschema:"2-4 descriptions, each at most 90 characters"`
@@ -56,9 +56,9 @@ func runDraftResponsiveSearchAd(ctx context.Context, c *Client, args DraftRsaArg
 		return applyConfirmed(ctx, c, tool, args.Confirm)
 	}
 
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
 		return WriteResult{}, err
@@ -94,7 +94,7 @@ func runDraftResponsiveSearchAd(ctx context.Context, c *Client, args DraftRsaArg
 // DraftAppAdArgs drafts an App campaign ad. App ads are immutable after
 // creation, so copy or asset changes are made by creating a replacement ad.
 type DraftAppAdArgs struct {
-	CustomerID         string   `json:"customer_id" jsonschema:"the Google Ads customer ID that owns the ad group"`
+	CustomerID         string   `json:"customer_id,omitempty" jsonschema:"the Google Ads customer ID that owns the ad group; omit to use the configured default customer"`
 	AdGroupID          string   `json:"ad_group_id" jsonschema:"the App campaign ad group ID to create the replacement ad in"`
 	Headlines          []string `json:"headlines" jsonschema:"1-5 headlines, each at most 30 characters"`
 	Descriptions       []string `json:"descriptions" jsonschema:"1-5 descriptions, each at most 90 characters"`
@@ -157,9 +157,9 @@ func runDraftAppAd(ctx context.Context, c *Client, args DraftAppAdArgs) (WriteRe
 	if len(args.YouTubeVideoAssets) > 0 {
 		appAd["youtubeVideos"] = assetRefs(args.YouTubeVideoAssets)
 	}
-	cid := normalizeCustomerID(args.CustomerID)
-	if cid == "" {
-		return WriteResult{}, fmt.Errorf("customer_id is required")
+	cid, err := c.resolveCustomerID(args.CustomerID)
+	if err != nil {
+		return WriteResult{}, err
 	}
 	if _, err := numericID("ad_group_id", args.AdGroupID); err != nil {
 		return WriteResult{}, err
@@ -248,7 +248,7 @@ var adDraftAppCmd = &cobra.Command{
 }
 
 func init() {
-	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.AdGroupID, "ad-group-id", "", "ad group ID (required)")
 	adDraftRsaCmd.Flags().StringArrayVar(&draftRsaArgs.Headlines, "headline", nil, "headline (repeatable, 3-15)")
 	adDraftRsaCmd.Flags().StringArrayVar(&draftRsaArgs.Descriptions, "description", nil, "description (repeatable, 2-4)")
@@ -257,11 +257,10 @@ func init() {
 	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.Path2, "path2", "", "display URL path segment 2")
 	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.Status, "status", "", "ENABLED, PAUSED (default), or REMOVED")
 	adDraftRsaCmd.Flags().StringVar(&draftRsaArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = adDraftRsaCmd.MarkFlagRequired("customer-id")
 	_ = adDraftRsaCmd.MarkFlagRequired("ad-group-id")
 	_ = adDraftRsaCmd.MarkFlagRequired("final-url")
 
-	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.CustomerID, "customer-id", "", "Google Ads customer ID (required)")
+	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.CustomerID, "customer-id", "", "Google Ads customer ID (falls back to the configured default)")
 	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.AdGroupID, "ad-group-id", "", "App campaign ad group ID (required)")
 	adDraftAppCmd.Flags().StringArrayVar(&draftAppAdArgs.Headlines, "headline", nil, "headline (repeatable, 1-5)")
 	adDraftAppCmd.Flags().StringArrayVar(&draftAppAdArgs.Descriptions, "description", nil, "description (repeatable, 1-5)")
@@ -269,7 +268,6 @@ func init() {
 	adDraftAppCmd.Flags().StringArrayVar(&draftAppAdArgs.YouTubeVideoAssets, "youtube-video-asset", nil, "Google Ads YouTube video asset resource name (repeatable)")
 	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.Status, "status", "", "ENABLED, PAUSED (default), or REMOVED")
 	adDraftAppCmd.Flags().StringVar(&draftAppAdArgs.Confirm, "confirm", "", "confirm token from a previous preview")
-	_ = adDraftAppCmd.MarkFlagRequired("customer-id")
 	_ = adDraftAppCmd.MarkFlagRequired("ad-group-id")
 
 	adCmd.AddCommand(adDraftRsaCmd, adDraftAppCmd)

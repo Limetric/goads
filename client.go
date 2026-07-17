@@ -54,6 +54,28 @@ func NewClient(ctx context.Context, cfg *Config) (*Client, error) {
 	}, nil
 }
 
+// resolveCustomerID returns the customer ID a tool call should act on: the
+// explicit argument when given, otherwise the configured default
+// (default_customer_id / GOOGLE_ADS_CUSTOMER_ID). Every handler calls this, so
+// the default works identically for CLI flags and MCP tool arguments.
+//
+// A blank explicit value counts as "not given", but a non-blank value that
+// normalizes to nothing (e.g. "---") is rejected: it must never silently
+// redirect the call — possibly a write — to the default account.
+func (c *Client) resolveCustomerID(explicit string) (string, error) {
+	if strings.TrimSpace(explicit) != "" {
+		id := normalizeCustomerID(explicit)
+		if id == "" {
+			return "", fmt.Errorf("invalid customer ID %q", explicit)
+		}
+		return id, nil
+	}
+	if c != nil && c.cfg != nil && c.cfg.DefaultCustomerID != "" {
+		return c.cfg.DefaultCustomerID, nil
+	}
+	return "", fmt.Errorf("customer_id is required — pass --customer-id, or set a default with `goads config set-customer <id>` (or GOOGLE_ADS_CUSTOMER_ID)")
+}
+
 // buildHeaders sets the three headers every Google Ads REST call needs:
 // the OAuth bearer token, the developer token, and (optionally) the
 // login-customer-id of the manager account.
