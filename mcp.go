@@ -55,6 +55,10 @@ func registerTools(server *mcp.Server, client *Client) {
 		"Update a campaign's daily budget. Returns a preview + confirm token; pass Confirm to apply.",
 		runBudgetSet)
 
+	addTool(server, client, "delete_campaign_budget",
+		"Delete an unused campaign budget. Returns a preview + confirm token; two confirmations are required to apply.",
+		runDeleteBudget)
+
 	addTool(server, client, "campaigns",
 		"Show campaign-level performance metrics (cost, clicks, conversions, CTR, CPA) for non-removed campaigns (defaults to the last 30 days).",
 		runCampaigns)
