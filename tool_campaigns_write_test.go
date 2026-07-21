@@ -49,6 +49,40 @@ func TestDraftCampaign_PreviewThenApply(t *testing.T) {
 	if ag["type"] != "SEARCH_STANDARD" || ag["status"] != "PAUSED" {
 		t.Errorf("ad group op wrong: %v", ag)
 	}
+	budget := opCreate(t, ops[0].(map[string]any), "campaignBudgetOperation")
+	if shared, ok := budget["explicitlyShared"].(bool); !ok || shared {
+		t.Errorf("expected new budget to be dedicated (explicitlyShared: false), got %v", budget["explicitlyShared"])
+	}
+}
+
+// TestDraftCampaign_DedicatedBudget guards against a regression where the
+// budget's explicitlyShared field was left unset: the API then defaults it
+// to true, which Google rejects for non-portfolio Smart Bidding strategies
+// (MAXIMIZE_CONVERSIONS, TARGET_CPA, ...) with "Bidding strategy type is
+// incompatible with shared budget".
+func TestDraftCampaign_DedicatedBudget(t *testing.T) {
+	useTempState(t)
+	srv, cap := mutateServer(t)
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	args := DraftCampaignArgs{
+		CustomerID: "1", CampaignName: "x", DailyBudget: 10,
+		BiddingStrategy: "MAXIMIZE_CONVERSIONS", ChannelType: "SEARCH", AdGroupName: "ag",
+	}
+	prev, err := runDraftCampaign(t.Context(), c, args)
+	if err != nil {
+		t.Fatalf("preview: %v", err)
+	}
+	args.Confirm = prev.Token
+	if _, err := runDraftCampaign(t.Context(), c, args); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	ops := cap.lastOps()
+	budget := opCreate(t, ops[0].(map[string]any), "campaignBudgetOperation")
+	if shared, ok := budget["explicitlyShared"].(bool); !ok || shared {
+		t.Errorf("expected explicitlyShared: false, got %v", budget["explicitlyShared"])
+	}
 }
 
 func TestDraftCampaign_BudgetCap(t *testing.T) {

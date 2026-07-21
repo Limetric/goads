@@ -143,7 +143,13 @@ func runDraftCampaign(ctx context.Context, c *Client, args DraftCampaignArgs) (W
 		"name":           args.CampaignName + " Budget",
 		"amountMicros":   microsString(dollarsToMicros(args.DailyBudget)),
 		"deliveryMethod": "STANDARD",
-		"resourceName":   budgetResource,
+		// The API defaults explicitlyShared to true when omitted, which
+		// breaks non-portfolio Smart Bidding strategies (MAXIMIZE_CONVERSIONS,
+		// TARGET_CPA, ...) with "Bidding strategy type is incompatible with
+		// shared budget". New campaigns get a dedicated budget by default,
+		// matching how every existing campaign in this account is set up.
+		"explicitlyShared": false,
+		"resourceName":     budgetResource,
 	}}})
 
 	// 2. Campaign.
